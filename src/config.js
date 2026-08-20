@@ -1,6 +1,8 @@
 const path = require('path');
 
-const MAX_FILE_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || '100', 10);
+const MAX_FILE_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || '4096', 10);
+const CHUNK_SIZE_MB = parseInt(process.env.CHUNK_SIZE_MB || '5', 10);
+const CHUNK_SESSION_MAX_AGE_HOURS = parseInt(process.env.CHUNK_SESSION_MAX_AGE_HOURS || '48', 10);
 const SHORT_NAME_MIN_LENGTH = 2;
 const SHORT_NAME_MAX_LENGTH = 32;
 const SHORT_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -12,8 +14,11 @@ module.exports = {
   loginPassword: process.env.LOGIN_PASSWORD || 'changeme',
   baseUrl: (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, ''),
   maxFileSizeBytes: MAX_FILE_SIZE_MB * 1024 * 1024,
+  chunkSizeBytes: CHUNK_SIZE_MB * 1024 * 1024,
+  chunkSessionMaxAgeHours: CHUNK_SESSION_MAX_AGE_HOURS,
   uploadDir: path.resolve(process.env.UPLOAD_DIR || 'uploads'),
   tempDir: path.resolve(process.env.UPLOAD_DIR || 'uploads', 'temp'),
+  chunkUploadDir: path.resolve(process.env.UPLOAD_DIR || 'uploads', 'chunks'),
   dataDir: path.resolve(process.env.DATA_DIR || 'data'),
   dbPath: path.resolve(process.env.DATA_DIR || 'data', 'share.db'),
   shortNameMinLength: SHORT_NAME_MIN_LENGTH,

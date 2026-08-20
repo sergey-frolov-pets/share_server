@@ -158,6 +158,21 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS chunk_uploads (
+    id TEXT PRIMARY KEY,
+    original_name TEXT NOT NULL,
+    total_size INTEGER NOT NULL,
+    chunk_size INTEGER NOT NULL,
+    total_chunks INTEGER NOT NULL,
+    received_chunks TEXT NOT NULL DEFAULT '[]',
+    stored_path TEXT NOT NULL,
+    owner_user_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'active',
+    file_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 const GLOBAL_MAX_STORAGE_KEY = 'global_max_storage_bytes';
@@ -181,7 +196,9 @@ function getTotalDiskUsageBytes() {
   const row = db.prepare(`
     SELECT
       (SELECT COALESCE(SUM(file_size_bytes), 0) FROM stored_files) +
-      (SELECT COALESCE(SUM(file_size), 0) FROM temp_uploads) AS total
+      (SELECT COALESCE(SUM(file_size), 0) FROM temp_uploads) +
+      (SELECT COALESCE(SUM(total_size), 0) FROM chunk_uploads
+        WHERE status NOT IN ('cancelled', 'complete')) AS total
   `).get();
   return row?.total || 0;
 }
@@ -476,6 +493,53 @@ function getStaleTempUploads(hoursOld) {
   `).all(hoursOld);
 }
 
+function createChunkUpload(record) {
+  db.prepare(`
+    INSERT INTO chunk_uploads (
+      id, original_name, total_size, chunk_size, total_chunks,
+      received_chunks, stored_path, owner_user_id, status, file_fingerprint
+    )
+    VALUES (
+      @id, @originalName, @totalSize, @chunkSize, @totalChunks,
+      @receivedChunks, @storedPath, @ownerUserId, @status, @fileFingerprint
+    )
+  `).run(record);
+}
+
+function getChunkUpload(id) {
+  return db.prepare('SELECT * FROM chunk_uploads WHERE id = ?').get(id);
+}
+
+function updateChunkUploadProgress(id, receivedChunks, status) {
+  db.prepare(`
+    UPDATE chunk_uploads
+    SET received_chunks = @receivedChunks,
+        status = @status,
+        updated_at = datetime('now')
+    WHERE id = @id
+  `).run({ id, receivedChunks, status });
+}
+
+function setChunkUploadStatus(id, status) {
+  db.prepare(`
+    UPDATE chunk_uploads
+    SET status = @status, updated_at = datetime('now')
+    WHERE id = @id
+  `).run({ id, status });
+}
+
+function deleteChunkUpload(id) {
+  db.prepare('DELETE FROM chunk_uploads WHERE id = ?').run(id);
+}
+
+function getStaleChunkUploads(hoursOld) {
+  return db.prepare(`
+    SELECT * FROM chunk_uploads
+    WHERE status NOT IN ('complete', 'cancelled')
+      AND updated_at <= datetime('now', '-' || ? || ' hours')
+  `).all(hoursOld);
+}
+
 function getUserByEmail(email) {
   return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 }
@@ -632,6 +696,12 @@ module.exports = {
   getTempUpload,
   deleteTempUpload,
   getStaleTempUploads,
+  createChunkUpload,
+  getChunkUpload,
+  updateChunkUploadProgress,
+  setChunkUploadStatus,
+  deleteChunkUpload,
+  getStaleChunkUploads,
   getUserByEmail,
   getUserById,
   createUser,

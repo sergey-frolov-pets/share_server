@@ -4,8 +4,11 @@ const {
   deleteLinksForStoredFile,
   getStaleTempUploads,
   deleteTempUpload,
+  getStaleChunkUploads,
+  deleteChunkUpload,
   deleteExpiredTokens,
 } = require('./db');
+const config = require('./config');
 
 const STALE_TEMP_HOURS = 24;
 
@@ -32,6 +35,12 @@ function cleanupExpiredAndExhausted() {
   for (const temp of staleTemps) {
     removeFileFromDisk(temp.stored_path);
     deleteTempUpload(temp.id);
+  }
+
+  const staleChunks = getStaleChunkUploads(config.chunkSessionMaxAgeHours);
+  for (const chunk of staleChunks) {
+    removeFileFromDisk(chunk.stored_path);
+    deleteChunkUpload(chunk.id);
   }
 
   deleteExpiredTokens();

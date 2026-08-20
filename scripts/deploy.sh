@@ -60,8 +60,10 @@ else
   APP_PORT="${APP_PORT:-3000}"
   LOGIN_USERNAME="${LOGIN_USERNAME:-admin}"
   LOGIN_PASSWORD="${LOGIN_PASSWORD:-changeme}"
-  MAX_FILE_SIZE_MB="${MAX_FILE_SIZE_MB:-100}"
-  NGINX_CLIENT_MAX_BODY="${NGINX_CLIENT_MAX_BODY:-100m}"
+  MAX_FILE_SIZE_MB="${MAX_FILE_SIZE_MB:-4096}"
+  CHUNK_SIZE_MB="${CHUNK_SIZE_MB:-5}"
+  CHUNK_SESSION_MAX_AGE_HOURS="${CHUNK_SESSION_MAX_AGE_HOURS:-48}"
+  NGINX_CLIENT_MAX_BODY="${NGINX_CLIENT_MAX_BODY:-10m}"
   INSTALL_NGINX="${INSTALL_NGINX:-true}"
   CONFIGURE_UFW="${CONFIGURE_UFW:-true}"
 fi
@@ -122,6 +124,8 @@ LOGIN_USERNAME=${LOGIN_USERNAME}
 LOGIN_PASSWORD=${LOGIN_PASSWORD}
 BASE_URL=${BASE_URL}
 MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB}
+CHUNK_SIZE_MB=${CHUNK_SIZE_MB:-5}
+CHUNK_SESSION_MAX_AGE_HOURS=${CHUNK_SESSION_MAX_AGE_HOURS:-48}
 UPLOAD_DIR=uploads
 DATA_DIR=data
 SMTP_HOST=
@@ -138,7 +142,7 @@ else
   log ".env уже существует, не перезаписываю"
 fi
 
-mkdir -p "$APP_DIR/uploads" "$APP_DIR/data" "$APP_DIR/uploads/temp"
+mkdir -p "$APP_DIR/uploads" "$APP_DIR/data" "$APP_DIR/uploads/temp" "$APP_DIR/uploads/chunks"
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/uploads" "$APP_DIR/data"
 
 log "npm install..."
@@ -189,7 +193,8 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 300s;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
         proxy_request_buffering off;
     }
 }

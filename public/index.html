@@ -44,8 +44,19 @@
       </div>
 
       <div id="file-info" class="file-info hidden">
-        <span id="file-name"></span>
-        <span id="upload-status" class="status"></span>
+        <div class="upload-info-main">
+          <span id="file-name"></span>
+          <span id="upload-status" class="status"></span>
+        </div>
+        <div id="upload-progress" class="upload-progress hidden">
+          <div class="progress-bar"><div id="upload-progress-fill" class="progress-fill"></div></div>
+          <span id="upload-progress-text" class="progress-text">0%</span>
+          <div class="upload-controls">
+            <button type="button" id="upload-pause-btn" class="btn-small hidden">Пауза</button>
+            <button type="button" id="upload-resume-btn" class="btn-small hidden">Продолжить</button>
+            <button type="button" id="upload-cancel-btn" class="btn-small hidden">Отмена</button>
+          </div>
+        </div>
       </div>
 
       <form id="share-form" class="share-form hidden">
@@ -132,8 +143,19 @@
       </div>
 
       <div id="update-file-info" class="file-info hidden">
-        <span id="update-file-name"></span>
-        <span id="update-upload-status" class="status"></span>
+        <div class="upload-info-main">
+          <span id="update-file-name"></span>
+          <span id="update-upload-status" class="status"></span>
+        </div>
+        <div id="update-upload-progress" class="upload-progress hidden">
+          <div class="progress-bar"><div id="update-upload-progress-fill" class="progress-fill"></div></div>
+          <span id="update-upload-progress-text" class="progress-text">0%</span>
+          <div class="upload-controls">
+            <button type="button" id="update-upload-pause-btn" class="btn-small hidden">Пауза</button>
+            <button type="button" id="update-upload-resume-btn" class="btn-small hidden">Продолжить</button>
+            <button type="button" id="update-upload-cancel-btn" class="btn-small hidden">Отмена</button>
+          </div>
+        </div>
       </div>
 
       <form id="update-form" class="share-form hidden">
@@ -239,6 +261,7 @@
   </section>
   </main>
 
+  <script src="/chunk-upload.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -16,6 +16,33 @@ const shareLink = document.getElementById('user-share-link');
 
 let uploadId = null;
 let uploadPromise = null;
+let chunkUploader = null;
+
+function resetUploadUi() {
+  if (chunkUploader) {
+    chunkUploader.cancel().catch(() => {});
+    chunkUploader = null;
+  }
+  uploadId = null;
+  uploadPromise = null;
+  document.getElementById('user-upload-progress')?.classList.add('hidden');
+  const fill = document.getElementById('user-upload-progress-fill');
+  if (fill) fill.style.width = '0%';
+}
+
+function createUserChunkUploader() {
+  const uploader = new ChunkUploader({ apiPrefix: '/api/user/upload' });
+  bindChunkUploadControls(uploader, {
+    progressWrap: document.getElementById('user-upload-progress'),
+    progressFill: document.getElementById('user-upload-progress-fill'),
+    progressText: document.getElementById('user-upload-progress-text'),
+    statusEl: uploadStatusEl,
+    pauseBtn: document.getElementById('user-upload-pause-btn'),
+    resumeBtn: document.getElementById('user-upload-resume-btn'),
+    cancelBtn: document.getElementById('user-upload-cancel-btn'),
+  });
+  return uploader;
+}
 
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
@@ -84,27 +111,21 @@ async function loadQuota() {
 }
 
 function startUpload(file) {
-  uploadId = null;
-  uploadPromise = null;
+  resetUploadUi();
   fileNameEl.textContent = file.name;
   show(fileInfo);
   show(shareForm);
   assignDefaultShortName();
-  uploadStatusEl.textContent = 'Загрузка…';
-  uploadStatusEl.className = 'status uploading';
+  chunkUploader = createUserChunkUploader();
 
-  const fd = new FormData();
-  fd.append('file', file);
-  uploadPromise = api('/api/user/upload-temp', { method: 'POST', body: fd })
-    .then((d) => {
-      uploadId = d.uploadId;
-      uploadStatusEl.textContent = 'Загружено';
-      uploadStatusEl.className = 'status done';
-      return d;
+  uploadPromise = chunkUploader.upload(file)
+    .then((data) => {
+      if (!data) return data;
+      uploadId = data.uploadId;
+      return data;
     })
     .catch((err) => {
-      uploadStatusEl.textContent = err.message;
-      uploadStatusEl.className = 'status error';
+      if (chunkUploader.waitingForResume) return null;
       throw err;
     });
 }
@@ -125,7 +146,10 @@ shareForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   setMsg(shareError, null);
   try {
-    await uploadPromise;
+    const uploadResult = await uploadPromise;
+    if (uploadResult === null && chunkUploader?.waitingForResume) {
+      throw new Error('Дождитесь окончания загрузки или нажмите «Продолжить»');
+    }
     if (!uploadId) throw new Error('Файл не загружен');
     const data = await api('/api/user/share', {
       method: 'POST',

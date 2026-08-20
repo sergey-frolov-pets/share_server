@@ -65,8 +65,10 @@ const updateSuccess = document.getElementById('update-success');
 
 let currentUploadId = null;
 let uploadPromise = null;
+let createUploader = null;
 let updateUploadId = null;
 let updateUploadPromise = null;
+let updateUploader = null;
 let nameCheckTimeout = null;
 let editingShortName = null;
 
@@ -158,6 +160,10 @@ function buildLimitPayload(linkMax, linkDays, fileMax, fileDays) {
 }
 
 function resetCreateState() {
+  if (createUploader) {
+    createUploader.cancel().catch(() => {});
+    createUploader = null;
+  }
   currentUploadId = null;
   uploadPromise = null;
   fileInput.value = '';
@@ -178,9 +184,16 @@ function resetCreateState() {
   updateNamePreview();
   uploadStatusEl.textContent = '';
   uploadStatusEl.className = 'status';
+  document.getElementById('upload-progress')?.classList.add('hidden');
+  const fill = document.getElementById('upload-progress-fill');
+  if (fill) fill.style.width = '0%';
 }
 
 function resetManageState() {
+  if (updateUploader) {
+    updateUploader.cancel().catch(() => {});
+    updateUploader = null;
+  }
   editingShortName = null;
   updateUploadId = null;
   updateUploadPromise = null;
@@ -195,50 +208,52 @@ function resetManageState() {
   newShortNameInput.value = '';
 }
 
+function createChunkUploader(isUpdate) {
+  const prefix = isUpdate ? 'update' : 'upload';
+  const uploader = new ChunkUploader({ apiPrefix: '/api/upload' });
+  bindChunkUploadControls(uploader, {
+    progressWrap: document.getElementById(`${prefix}-upload-progress`),
+    progressFill: document.getElementById(`${prefix}-upload-progress-fill`),
+    progressText: document.getElementById(`${prefix}-upload-progress-text`),
+    statusEl: document.getElementById(isUpdate ? 'update-upload-status' : 'upload-status'),
+    pauseBtn: document.getElementById(`${prefix}-upload-pause-btn`),
+    resumeBtn: document.getElementById(`${prefix}-upload-resume-btn`),
+    cancelBtn: document.getElementById(`${prefix}-upload-cancel-btn`),
+  });
+  return uploader;
+}
+
 function startUpload(file, isUpdate = false) {
   if (isUpdate) {
+    if (updateUploader) updateUploader.cancel().catch(() => {});
     updateUploadId = null;
     updateUploadPromise = null;
     updateFileNameEl.textContent = file.name;
     show(updateFileInfo);
-    updateUploadStatusEl.textContent = 'Загрузка…';
-    updateUploadStatusEl.className = 'status uploading';
+    updateUploader = createChunkUploader(true);
   } else {
     resetCreateState();
     fileNameEl.textContent = file.name;
     show(fileInfo);
     show(shareForm);
     assignDefaultShortName();
-    uploadStatusEl.textContent = 'Загрузка…';
-    uploadStatusEl.className = 'status uploading';
+    createUploader = createChunkUploader(false);
   }
 
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const promise = api('/api/upload-temp', {
-    method: 'POST',
-    body: formData,
-  })
+  const uploader = isUpdate ? updateUploader : createUploader;
+  const promise = uploader.upload(file)
     .then((data) => {
+      if (!data) return data;
       if (isUpdate) {
         updateUploadId = data.uploadId;
-        updateUploadStatusEl.textContent = 'Загружено';
-        updateUploadStatusEl.className = 'status done';
       } else {
         currentUploadId = data.uploadId;
-        uploadStatusEl.textContent = 'Загружено';
-        uploadStatusEl.className = 'status done';
       }
       return data;
     })
     .catch((err) => {
-      if (isUpdate) {
-        updateUploadStatusEl.textContent = err.message;
-        updateUploadStatusEl.className = 'status error';
-      } else {
-        uploadStatusEl.textContent = err.message;
-        uploadStatusEl.className = 'status error';
+      if (uploader.waitingForResume) {
+        return null;
       }
       throw err;
     });
@@ -435,7 +450,10 @@ shareForm.addEventListener('submit', async (e) => {
 
   try {
     if (!uploadPromise) throw new Error('Сначала выберите файл');
-    await uploadPromise;
+    const uploadResult = await uploadPromise;
+    if (uploadResult === null && createUploader?.waitingForResume) {
+      throw new Error('Дождитесь окончания загрузки или нажмите «Продолжить»');
+    }
     if (!currentUploadId) throw new Error('Файл ещё не загружен');
 
     const data = await api('/api/share', {
@@ -515,7 +533,10 @@ updateForm.addEventListener('submit', async (e) => {
     if (!editingShortName) throw new Error('Сначала загрузите ссылку');
 
     if (updateUploadPromise) {
-      await updateUploadPromise;
+      const updateResult = await updateUploadPromise;
+      if (updateResult === null && updateUploader?.waitingForResume) {
+        throw new Error('Дождитесь окончания загрузки или нажмите «Продолжить»');
+      }
     }
 
     const body = {

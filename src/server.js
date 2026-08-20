@@ -57,9 +57,11 @@ const {
   isLinkExhausted,
 } = require('./download');
 const { handleRandomName } = require('./randomName');
+const { registerChunkUploadRoutes } = require('./chunkUpload');
 
 fs.mkdirSync(config.uploadDir, { recursive: true });
 fs.mkdirSync(config.tempDir, { recursive: true });
+fs.mkdirSync(config.chunkUploadDir, { recursive: true });
 
 const tempStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, config.tempDir),
@@ -186,6 +188,12 @@ app.post('/api/upload-temp', requireAdminAuth, (req, res) => {
   });
 });
 
+registerChunkUploadRoutes(app, {
+  basePath: '/api/upload',
+  authMiddleware: requireAdminAuth,
+  ownerUserIdFromReq: () => null,
+});
+
 app.post('/api/share', requireAdminAuth, (req, res) => {
   handleCreateShare(req, res, validateShortName);
 });
@@ -277,6 +285,21 @@ app.post('/api/user/upload-temp', requireUserAuth, (req, res) => {
       size: req.file.size,
     });
   });
+});
+
+registerChunkUploadRoutes(app, {
+  basePath: '/api/user/upload',
+  authMiddleware: (req, res, next) => {
+    requireUserAuth(req, res, () => {
+      const precheck = assertUserCanUpload(req.session.userId, 0);
+      if (!precheck.user) {
+        res.status(403).json({ error: precheck.error || 'Загрузка не разрешена' });
+        return;
+      }
+      next();
+    });
+  },
+  ownerUserIdFromReq: (req) => req.session.userId,
 });
 
 app.post('/api/user/share', requireUserAuth, (req, res) => {
