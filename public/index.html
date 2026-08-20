@@ -30,59 +30,166 @@
       <button type="button" id="logout-btn" class="link-btn">Выйти</button>
     </header>
 
-    <div id="drop-zone" class="drop-zone">
-      <p>Перетащите файл сюда</p>
-      <p class="hint">или кликните для выбора</p>
-      <input type="file" id="file-input" hidden>
+    <div class="tabs">
+      <button type="button" id="tab-create" class="tab active">Новая ссылка</button>
+      <button type="button" id="tab-manage" class="tab">Обновить ссылку</button>
     </div>
 
-    <div id="file-info" class="file-info hidden">
-      <span id="file-name"></span>
-      <span id="upload-status" class="status"></span>
-    </div>
-
-    <form id="share-form" class="share-form hidden">
-      <label>
-        Короткое имя (часть ссылки)
-        <input type="text" id="short-name" placeholder="my-file" pattern="[A-Za-z0-9_-]+" required>
-        <span id="name-preview" class="hint"></span>
-        <span id="name-error" class="error hidden"></span>
-      </label>
-
-      <div class="row">
-        <label>
-          Скачиваний
-          <input type="number" id="max-downloads" min="1" value="2" required>
-        </label>
-        <label>
-          Дней на сервере
-          <input type="number" id="storage-days" min="1" value="2" required>
-        </label>
+    <div id="create-panel">
+      <div id="drop-zone" class="drop-zone">
+        <p>Перетащите файл сюда</p>
+        <p class="hint">или кликните для выбора</p>
+        <input type="file" id="file-input" hidden>
       </div>
 
-      <label>
-        Пароль для скачивания (опционально)
-        <input type="password" id="download-password" autocomplete="new-password" placeholder="не задан">
-      </label>
+      <div id="file-info" class="file-info hidden">
+        <span id="file-name"></span>
+        <span id="upload-status" class="status"></span>
+      </div>
 
-      <label>
-        Доступ: email (через запятую или с новой строки)
-        <textarea id="allowed-emails" rows="2" placeholder="user@example.com, friend@vk.ru"></textarea>
-      </label>
+      <form id="share-form" class="share-form hidden">
+        <label>
+          Короткое имя (часть ссылки)
+          <input type="text" id="short-name" placeholder="my-file" pattern="[A-Za-z0-9_-]+" required>
+          <span id="name-preview" class="hint"></span>
+          <span id="name-error" class="error hidden"></span>
+        </label>
 
-      <label>
-        Доступ: домены (например vk.ru)
-        <textarea id="allowed-domains" rows="2" placeholder="vk.ru, company.com"></textarea>
-      </label>
+        <fieldset class="fieldset">
+          <legend>Ссылка — когда перестаёт скачиваться</legend>
+          <div class="row">
+            <label>
+              Макс. скачиваний
+              <input type="number" id="link-max-downloads" min="1" placeholder="без лимита">
+            </label>
+            <label>
+              Срок, дней
+              <input type="number" id="link-days" min="1" placeholder="без срока">
+            </label>
+          </div>
+        </fieldset>
 
-      <button type="submit" id="share-btn">Создать ссылку</button>
-      <p id="share-error" class="error hidden"></p>
-    </form>
+        <fieldset class="fieldset">
+          <legend>Файл — когда удаляется с сервера</legend>
+          <div class="row">
+            <label>
+              Макс. скачиваний
+              <input type="number" id="file-max-downloads" min="1" placeholder="без лимита">
+            </label>
+            <label>
+              Удалить через, дней
+              <input type="number" id="file-days" min="1" placeholder="без срока">
+            </label>
+          </div>
+        </fieldset>
 
-    <div id="result" class="result hidden">
-      <p>Ссылка готова:</p>
-      <a id="share-link" href="#" target="_blank" rel="noopener"></a>
-      <button type="button" id="new-upload-btn" class="link-btn">Загрузить другой файл</button>
+        <label>
+          Пароль для скачивания (опционально)
+          <input type="password" id="download-password" autocomplete="new-password" placeholder="не задан">
+        </label>
+
+        <label>
+          Доступ: email
+          <textarea id="allowed-emails" rows="2" placeholder="user@example.com"></textarea>
+        </label>
+
+        <label>
+          Доступ: домены
+          <textarea id="allowed-domains" rows="2" placeholder="vk.ru"></textarea>
+        </label>
+
+        <button type="submit" id="share-btn">Создать ссылку</button>
+        <p id="share-error" class="error hidden"></p>
+      </form>
+
+      <div id="result" class="result hidden">
+        <p>Ссылка готова:</p>
+        <a id="share-link" href="#" target="_blank" rel="noopener"></a>
+        <button type="button" id="new-upload-btn" class="link-btn">Загрузить другой файл</button>
+      </div>
+    </div>
+
+    <div id="manage-panel" class="hidden">
+      <form id="load-link-form" class="share-form">
+        <label>
+          Имя ссылки для обновления
+          <input type="text" id="manage-short-name" placeholder="my-file" required>
+        </label>
+        <button type="submit">Загрузить настройки</button>
+        <p id="load-error" class="error hidden"></p>
+      </form>
+
+      <div id="update-drop-zone" class="drop-zone hidden">
+        <p>Новый файл (опционально)</p>
+        <p class="hint">перетащите для замены файла по ссылке</p>
+        <input type="file" id="update-file-input" hidden>
+      </div>
+
+      <div id="update-file-info" class="file-info hidden">
+        <span id="update-file-name"></span>
+        <span id="update-upload-status" class="status"></span>
+      </div>
+
+      <form id="update-form" class="share-form hidden">
+        <label>
+          Новое имя ссылки (опционально)
+          <input type="text" id="new-short-name" placeholder="оставить текущее">
+        </label>
+
+        <p id="current-file-name" class="hint"></p>
+
+        <fieldset class="fieldset">
+          <legend>Ссылка — когда перестаёт скачиваться</legend>
+          <div class="row">
+            <label>
+              Макс. скачиваний
+              <input type="number" id="update-link-max-downloads" min="1" placeholder="без лимита">
+            </label>
+            <label>
+              Срок, дней
+              <input type="number" id="update-link-days" min="1" placeholder="без срока">
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>Файл — когда удаляется с сервера</legend>
+          <div class="row">
+            <label>
+              Макс. скачиваний
+              <input type="number" id="update-file-max-downloads" min="1" placeholder="без лимита">
+            </label>
+            <label>
+              Удалить через, дней
+              <input type="number" id="update-file-days" min="1" placeholder="без срока">
+            </label>
+          </div>
+        </fieldset>
+
+        <label>
+          Пароль для скачивания
+          <input type="password" id="update-download-password" autocomplete="new-password" placeholder="не менять">
+        </label>
+
+        <label>
+          Доступ: email
+          <textarea id="update-allowed-emails" rows="2"></textarea>
+        </label>
+
+        <label>
+          Доступ: домены
+          <textarea id="update-allowed-domains" rows="2"></textarea>
+        </label>
+
+        <label class="checkbox-label">
+          <input type="checkbox" id="reset-link-count" checked>
+          Сбросить счётчик скачиваний ссылки
+        </label>
+
+        <button type="submit" id="update-btn">Обновить ссылку</button>
+        <p id="update-error" class="error hidden"></p>
+        <p id="update-success" class="success hidden"></p>
+      </form>
     </div>
   </section>
   </main>

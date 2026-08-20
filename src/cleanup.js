@@ -1,9 +1,8 @@
-const fs = require('fs');
 const {
-  getExpiredFiles,
-  getExhaustedFiles,
+  getStoredFilesPendingDeletion,
+  deleteStoredFileRecord,
+  deleteLinksForStoredFile,
   getStaleTempUploads,
-  deleteFileRecord,
   deleteTempUpload,
   deleteExpiredTokens,
 } = require('./db');
@@ -11,6 +10,7 @@ const {
 const STALE_TEMP_HOURS = 24;
 
 function removeFileFromDisk(filePath) {
+  const fs = require('fs');
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
@@ -21,14 +21,11 @@ function removeFileFromDisk(filePath) {
 }
 
 function cleanupExpiredAndExhausted() {
-  const toRemove = [...getExpiredFiles(), ...getExhaustedFiles()];
-  const seen = new Set();
-
-  for (const file of toRemove) {
-    if (seen.has(file.id)) continue;
-    seen.add(file.id);
-    removeFileFromDisk(file.stored_path);
-    deleteFileRecord(file.id);
+  const pendingDeletion = getStoredFilesPendingDeletion();
+  for (const storedFile of pendingDeletion) {
+    removeFileFromDisk(storedFile.stored_path);
+    deleteLinksForStoredFile(storedFile.id);
+    deleteStoredFileRecord(storedFile.id);
   }
 
   const staleTemps = getStaleTempUploads(STALE_TEMP_HOURS);

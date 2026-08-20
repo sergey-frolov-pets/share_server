@@ -3,6 +3,10 @@ const uploadSection = document.getElementById('upload-section');
 const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
+const tabCreate = document.getElementById('tab-create');
+const tabManage = document.getElementById('tab-manage');
+const createPanel = document.getElementById('create-panel');
+const managePanel = document.getElementById('manage-panel');
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const fileInfo = document.getElementById('file-info');
@@ -12,8 +16,10 @@ const shareForm = document.getElementById('share-form');
 const shortNameInput = document.getElementById('short-name');
 const namePreview = document.getElementById('name-preview');
 const nameError = document.getElementById('name-error');
-const maxDownloadsInput = document.getElementById('max-downloads');
-const storageDaysInput = document.getElementById('storage-days');
+const linkMaxDownloadsInput = document.getElementById('link-max-downloads');
+const linkDaysInput = document.getElementById('link-days');
+const fileMaxDownloadsInput = document.getElementById('file-max-downloads');
+const fileDaysInput = document.getElementById('file-days');
 const downloadPasswordInput = document.getElementById('download-password');
 const allowedEmailsInput = document.getElementById('allowed-emails');
 const allowedDomainsInput = document.getElementById('allowed-domains');
@@ -23,9 +29,35 @@ const result = document.getElementById('result');
 const shareLink = document.getElementById('share-link');
 const newUploadBtn = document.getElementById('new-upload-btn');
 
+const loadLinkForm = document.getElementById('load-link-form');
+const manageShortNameInput = document.getElementById('manage-short-name');
+const loadError = document.getElementById('load-error');
+const updateDropZone = document.getElementById('update-drop-zone');
+const updateFileInput = document.getElementById('update-file-input');
+const updateFileInfo = document.getElementById('update-file-info');
+const updateFileNameEl = document.getElementById('update-file-name');
+const updateUploadStatusEl = document.getElementById('update-upload-status');
+const updateForm = document.getElementById('update-form');
+const newShortNameInput = document.getElementById('new-short-name');
+const currentFileNameEl = document.getElementById('current-file-name');
+const updateLinkMaxDownloadsInput = document.getElementById('update-link-max-downloads');
+const updateLinkDaysInput = document.getElementById('update-link-days');
+const updateFileMaxDownloadsInput = document.getElementById('update-file-max-downloads');
+const updateFileDaysInput = document.getElementById('update-file-days');
+const updateDownloadPasswordInput = document.getElementById('update-download-password');
+const updateAllowedEmailsInput = document.getElementById('update-allowed-emails');
+const updateAllowedDomainsInput = document.getElementById('update-allowed-domains');
+const resetLinkCountInput = document.getElementById('reset-link-count');
+const updateBtn = document.getElementById('update-btn');
+const updateError = document.getElementById('update-error');
+const updateSuccess = document.getElementById('update-success');
+
 let currentUploadId = null;
 let uploadPromise = null;
+let updateUploadId = null;
+let updateUploadPromise = null;
 let nameCheckTimeout = null;
+let editingShortName = null;
 
 function show(el) {
   el.classList.remove('hidden');
@@ -35,14 +67,22 @@ function hide(el) {
   el.classList.add('hidden');
 }
 
-function setError(el, message) {
+function setMessage(el, message, type) {
   if (message) {
     el.textContent = message;
+    el.className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'hint';
     show(el);
   } else {
     el.textContent = '';
     hide(el);
   }
+}
+
+function daysFromExpires(expiresAt) {
+  if (!expiresAt) return '';
+  const ms = new Date(expiresAt) - Date.now();
+  if (ms <= 0) return '0';
+  return String(Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }
 
 async function api(path, options = {}) {
@@ -70,34 +110,45 @@ function updateNamePreview() {
 
 async function checkNameAvailability(name) {
   if (!name || name.length < 2) {
-    setError(nameError, null);
+    setMessage(nameError, null);
     return;
   }
 
   try {
     const data = await api(`/api/check-name/${encodeURIComponent(name)}`);
     if (!data.available) {
-      setError(nameError, data.error || 'Имя недоступно');
+      setMessage(nameError, data.error || 'Имя недоступно', 'error');
     } else {
-      setError(nameError, null);
+      setMessage(nameError, null);
     }
   } catch (err) {
-    setError(nameError, err.message);
+    setMessage(nameError, err.message, 'error');
   }
 }
 
-function resetUploadState() {
+function buildLimitPayload(linkMax, linkDays, fileMax, fileDays) {
+  return {
+    linkMaxDownloads: linkMax,
+    linkDays: linkDays,
+    fileMaxDownloads: fileMax,
+    fileDays: fileDays,
+  };
+}
+
+function resetCreateState() {
   currentUploadId = null;
   uploadPromise = null;
   fileInput.value = '';
   hide(fileInfo);
   hide(shareForm);
   hide(result);
-  setError(shareError, null);
-  setError(nameError, null);
+  setMessage(shareError, null);
+  setMessage(nameError, null);
   shortNameInput.value = '';
-  maxDownloadsInput.value = '2';
-  storageDaysInput.value = '2';
+  linkMaxDownloadsInput.value = '';
+  linkDaysInput.value = '';
+  fileMaxDownloadsInput.value = '';
+  fileDaysInput.value = '';
   downloadPasswordInput.value = '';
   allowedEmailsInput.value = '';
   allowedDomainsInput.value = '';
@@ -106,67 +157,128 @@ function resetUploadState() {
   uploadStatusEl.className = 'status';
 }
 
-function startUpload(file) {
-  resetUploadState();
+function resetManageState() {
+  editingShortName = null;
+  updateUploadId = null;
+  updateUploadPromise = null;
+  updateFileInput.value = '';
+  hide(updateForm);
+  hide(updateDropZone);
+  hide(updateFileInfo);
+  setMessage(loadError, null);
+  setMessage(updateError, null);
+  setMessage(updateSuccess, null);
+  manageShortNameInput.value = '';
+  newShortNameInput.value = '';
+}
 
-  fileNameEl.textContent = file.name;
-  show(fileInfo);
-  show(shareForm);
-  uploadStatusEl.textContent = 'Загрузка…';
-  uploadStatusEl.className = 'status uploading';
+function startUpload(file, isUpdate = false) {
+  if (isUpdate) {
+    updateUploadId = null;
+    updateUploadPromise = null;
+    updateFileNameEl.textContent = file.name;
+    show(updateFileInfo);
+    updateUploadStatusEl.textContent = 'Загрузка…';
+    updateUploadStatusEl.className = 'status uploading';
+  } else {
+    resetCreateState();
+    fileNameEl.textContent = file.name;
+    show(fileInfo);
+    show(shareForm);
+    uploadStatusEl.textContent = 'Загрузка…';
+    uploadStatusEl.className = 'status uploading';
+  }
 
   const formData = new FormData();
   formData.append('file', file);
 
-  uploadPromise = api('/api/upload-temp', {
+  const promise = api('/api/upload-temp', {
     method: 'POST',
     body: formData,
   })
     .then((data) => {
-      currentUploadId = data.uploadId;
-      uploadStatusEl.textContent = 'Загружено';
-      uploadStatusEl.className = 'status done';
+      if (isUpdate) {
+        updateUploadId = data.uploadId;
+        updateUploadStatusEl.textContent = 'Загружено';
+        updateUploadStatusEl.className = 'status done';
+      } else {
+        currentUploadId = data.uploadId;
+        uploadStatusEl.textContent = 'Загружено';
+        uploadStatusEl.className = 'status done';
+      }
       return data;
     })
     .catch((err) => {
-      uploadStatusEl.textContent = err.message;
-      uploadStatusEl.className = 'status error';
+      if (isUpdate) {
+        updateUploadStatusEl.textContent = err.message;
+        updateUploadStatusEl.className = 'status error';
+      } else {
+        uploadStatusEl.textContent = err.message;
+        uploadStatusEl.className = 'status error';
+      }
       throw err;
     });
+
+  if (isUpdate) {
+    updateUploadPromise = promise;
+  } else {
+    uploadPromise = promise;
+  }
 }
 
-function handleFile(file) {
+function handleFile(file, isUpdate = false) {
   if (!file) return;
-  startUpload(file);
+  startUpload(file, isUpdate);
 }
+
+tabCreate.addEventListener('click', () => {
+  tabCreate.classList.add('active');
+  tabManage.classList.remove('active');
+  show(createPanel);
+  hide(managePanel);
+});
+
+tabManage.addEventListener('click', () => {
+  tabManage.classList.add('active');
+  tabCreate.classList.remove('active');
+  hide(createPanel);
+  show(managePanel);
+});
 
 dropZone.addEventListener('click', () => fileInput.click());
-
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
   dropZone.classList.add('dragover');
 });
-
-dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('dragover');
-});
-
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
   const file = e.dataTransfer.files[0];
   if (!file) return;
   if (e.dataTransfer.files.length > 1) {
-    setError(shareError, 'Загрузите только один файл');
+    setMessage(shareError, 'Загрузите только один файл', 'error');
     return;
   }
-  handleFile(file);
+  handleFile(file, false);
 });
 
-fileInput.addEventListener('change', () => {
-  const file = fileInput.files[0];
-  handleFile(file);
+fileInput.addEventListener('change', () => handleFile(fileInput.files[0], false));
+
+updateDropZone.addEventListener('click', () => updateFileInput.click());
+updateDropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  updateDropZone.classList.add('dragover');
 });
+updateDropZone.addEventListener('dragleave', () => updateDropZone.classList.remove('dragover'));
+updateDropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  updateDropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  handleFile(file, true);
+});
+updateFileInput.addEventListener('change', () => handleFile(updateFileInput.files[0], true));
 
 shortNameInput.addEventListener('input', () => {
   updateNamePreview();
@@ -177,7 +289,7 @@ shortNameInput.addEventListener('input', () => {
 
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  setError(loginError, null);
+  setMessage(loginError, null);
 
   try {
     await api('/api/login', {
@@ -189,7 +301,7 @@ loginForm.addEventListener('submit', async (e) => {
     });
     showUpload();
   } catch (err) {
-    setError(loginError, err.message);
+    setMessage(loginError, err.message, 'error');
   }
 });
 
@@ -200,30 +312,28 @@ logoutBtn.addEventListener('click', async () => {
 
 shareForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  setError(shareError, null);
+  setMessage(shareError, null);
   shareBtn.disabled = true;
 
   try {
-    if (!uploadPromise) {
-      throw new Error('Сначала выберите файл');
-    }
-
+    if (!uploadPromise) throw new Error('Сначала выберите файл');
     await uploadPromise;
-
-    if (!currentUploadId) {
-      throw new Error('Файл ещё не загружен');
-    }
+    if (!currentUploadId) throw new Error('Файл ещё не загружен');
 
     const data = await api('/api/share', {
       method: 'POST',
       body: JSON.stringify({
         uploadId: currentUploadId,
         shortName: shortNameInput.value.trim(),
-        maxDownloads: maxDownloadsInput.value,
-        storageDays: storageDaysInput.value,
         downloadPassword: downloadPasswordInput.value,
         allowedEmails: allowedEmailsInput.value,
         allowedDomains: allowedDomainsInput.value,
+        ...buildLimitPayload(
+          linkMaxDownloadsInput.value,
+          linkDaysInput.value,
+          fileMaxDownloadsInput.value,
+          fileDaysInput.value
+        ),
       }),
     });
 
@@ -234,14 +344,107 @@ shareForm.addEventListener('submit', async (e) => {
     shareLink.textContent = data.shareUrl;
     show(result);
   } catch (err) {
-    setError(shareError, err.message);
+    setMessage(shareError, err.message, 'error');
   } finally {
     shareBtn.disabled = false;
   }
 });
 
+loadLinkForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  setMessage(loadError, null);
+  setMessage(updateSuccess, null);
+
+  const name = manageShortNameInput.value.trim();
+  try {
+    const data = await api(`/api/share/${encodeURIComponent(name)}`);
+    editingShortName = data.shortName;
+
+    currentFileNameEl.textContent = [
+      `Файл: ${data.originalName}`,
+      `Ссылка: ${data.linkDownloadCount}/${data.linkMaxDownloads ?? '∞'} скачиваний`,
+      `Файл на сервере: ${data.fileDownloadCount}/${data.fileMaxDownloads ?? '∞'} скачиваний`,
+    ].join(' · ');
+
+    updateLinkMaxDownloadsInput.value = data.linkMaxDownloads ?? '';
+    updateLinkDaysInput.value = daysFromExpires(data.linkExpiresAt);
+    updateFileMaxDownloadsInput.value = data.fileMaxDownloads ?? '';
+    updateFileDaysInput.value = daysFromExpires(data.fileDeleteAt);
+    updateAllowedEmailsInput.value = (data.allowedEmails || []).join(', ');
+    updateAllowedDomainsInput.value = (data.allowedDomains || []).join(', ');
+    updateDownloadPasswordInput.value = '';
+    newShortNameInput.value = '';
+    resetLinkCountInput.checked = true;
+
+    show(updateDropZone);
+    show(updateForm);
+  } catch (err) {
+    setMessage(loadError, err.message, 'error');
+    hide(updateForm);
+    hide(updateDropZone);
+  }
+});
+
+updateForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  setMessage(updateError, null);
+  setMessage(updateSuccess, null);
+  updateBtn.disabled = true;
+
+  try {
+    if (!editingShortName) throw new Error('Сначала загрузите ссылку');
+
+    if (updateUploadPromise) {
+      await updateUploadPromise;
+    }
+
+    const body = {
+      newShortName: newShortNameInput.value.trim() || undefined,
+      allowedEmails: updateAllowedEmailsInput.value,
+      allowedDomains: updateAllowedDomainsInput.value,
+      resetLinkCount: resetLinkCountInput.checked,
+      ...buildLimitPayload(
+        updateLinkMaxDownloadsInput.value,
+        updateLinkDaysInput.value,
+        updateFileMaxDownloadsInput.value,
+        updateFileDaysInput.value
+      ),
+    };
+
+    if (updateDownloadPasswordInput.value) {
+      body.downloadPassword = updateDownloadPasswordInput.value;
+    }
+
+    if (updateUploadId) {
+      body.uploadId = updateUploadId;
+    }
+
+    const data = await api(`/api/share/${encodeURIComponent(editingShortName)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+
+    editingShortName = data.shortName;
+    manageShortNameInput.value = data.shortName;
+    setMessage(updateSuccess, `Ссылка обновлена: ${data.shareUrl}`, 'success');
+
+    updateUploadId = null;
+    updateUploadPromise = null;
+    hide(updateFileInfo);
+    updateFileInput.value = '';
+
+    if (data.originalName) {
+      currentFileNameEl.textContent = `Файл: ${data.originalName}`;
+    }
+  } catch (err) {
+    setMessage(updateError, err.message, 'error');
+  } finally {
+    updateBtn.disabled = false;
+  }
+});
+
 newUploadBtn.addEventListener('click', () => {
-  resetUploadState();
+  resetCreateState();
   show(dropZone);
 });
 
@@ -249,14 +452,19 @@ function showLogin() {
   hide(uploadSection);
   show(loginSection);
   loginForm.reset();
-  setError(loginError, null);
+  setMessage(loginError, null);
 }
 
 function showUpload() {
   hide(loginSection);
   show(uploadSection);
-  resetUploadState();
+  resetCreateState();
+  resetManageState();
   show(dropZone);
+  show(createPanel);
+  hide(managePanel);
+  tabCreate.classList.add('active');
+  tabManage.classList.remove('active');
 }
 
 async function init() {

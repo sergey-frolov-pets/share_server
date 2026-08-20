@@ -9,11 +9,12 @@ const multer = require('multer');
 const config = require('./config');
 const {
   isShortNameTaken,
-  createFile,
-  getFileByShortName,
   createTempUpload,
   getTempUpload,
   deleteTempUpload,
+  getLinkWithFile,
+  incrementLinkDownloadCount,
+  incrementStoredFileDownloadCount,
 } = require('./db');
 const {
   requireAdminAuth,
@@ -25,8 +26,11 @@ const {
   handleUserMe,
 } = require('./auth');
 const { startCleanupScheduler, removeFileFromDisk } = require('./cleanup');
-const { hashSecret } = require('./password');
-const { parseAccessInput, parseDomainInput } = require('./access');
+const {
+  handleCreateShare,
+  handleGetShare,
+  handleUpdateShare,
+} = require('./share');
 const {
   handleRegister,
   handleChangePassword,
@@ -41,7 +45,8 @@ const {
   handleAuthorizeDownload,
   handleDownloadFile,
   shouldServeDownloadPage,
-  isFileAvailable,
+  isDownloadAllowed,
+  isLinkExhausted,
 } = require('./download');
 
 fs.mkdirSync(config.uploadDir, { recursive: true });
@@ -170,108 +175,12 @@ app.post('/api/upload-temp', requireAdminAuth, (req, res) => {
 });
 
 app.post('/api/share', requireAdminAuth, (req, res) => {
-  const {
-    uploadId,
-    shortName,
-    maxDownloads,
-    storageDays,
-    downloadPassword,
-    allowedEmails,
-    allowedDomains,
-  } = req.body || {};
+  handleCreateShare(req, res, validateShortName);
+});
 
-  if (!uploadId) {
-    res.status(400).json({ error: 'Загрузка не найдена' });
-    return;
-  }
-
-  const nameError = validateShortName(shortName);
-  if (nameError) {
-    res.status(400).json({ error: nameError });
-    return;
-  }
-
-  const trimmedName = shortName.trim();
-  if (isShortNameTaken(trimmedName)) {
-    res.status(409).json({ error: 'Такое имя уже занято' });
-    return;
-  }
-
-  const downloadsParsed = parsePositiveInt(maxDownloads, 'Лимит скачиваний');
-  if (downloadsParsed.error) {
-    res.status(400).json({ error: downloadsParsed.error });
-    return;
-  }
-
-  const daysParsed = parsePositiveInt(storageDays, 'Срок хранения');
-  if (daysParsed.error) {
-    res.status(400).json({ error: daysParsed.error });
-    return;
-  }
-
-  const temp = getTempUpload(uploadId);
-  if (!temp) {
-    res.status(400).json({ error: 'Загрузка не найдена или уже использована' });
-    return;
-  }
-
-  const emailList = parseAccessInput(allowedEmails || '');
-  const domainList = parseDomainInput(allowedDomains || '');
-  let downloadPasswordHash = null;
-
-  if (downloadPassword && String(downloadPassword).trim()) {
-    if (String(downloadPassword).length < 4) {
-      res.status(400).json({ error: 'Пароль для скачивания — минимум 4 символа' });
-      return;
-    }
-    downloadPasswordHash = hashSecret(String(downloadPassword).trim());
-  }
-
-  const finalPath = path.join(
-    config.uploadDir,
-    `${trimmedName}__${temp.original_name.replace(/[^\w.\-() ]/g, '_')}`
-  );
-  try {
-    fs.renameSync(temp.stored_path, finalPath);
-  } catch {
-    res.status(500).json({ error: 'Не удалось сохранить файл' });
-    return;
-  }
-
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + daysParsed.value);
-  const expiresAtIso = expiresAt.toISOString().slice(0, 19).replace('T', ' ');
-
-  try {
-    createFile({
-      shortName: trimmedName,
-      originalName: temp.original_name,
-      storedPath: finalPath,
-      maxDownloads: downloadsParsed.value,
-      expiresAt: expiresAtIso,
-      downloadPasswordHash,
-      allowedEmails: JSON.stringify(emailList),
-      allowedDomains: JSON.stringify(domainList),
-    });
-    deleteTempUpload(uploadId);
-  } catch {
-    removeFileFromDisk(finalPath);
-    res.status(409).json({ error: 'Такое имя уже занято' });
-    return;
-  }
-
-  const shareUrl = `${config.baseUrl}/${encodeURIComponent(trimmedName)}`;
-  res.json({
-    ok: true,
-    shareUrl,
-    shortName: trimmedName,
-    maxDownloads: downloadsParsed.value,
-    storageDays: daysParsed.value,
-    expiresAt: expiresAtIso,
-    hasDownloadPassword: Boolean(downloadPasswordHash),
-    allowedEmails: emailList,
-    allowedDomains: domainList,
-  });
+app.get('/api/share/:shortName', requireAdminAuth, handleGetShare);
+app.put('/api/share/:shortName', requireAdminAuth, (req, res) => {
+  handleUpdateShare(req, res, validateShortName);
 });
 
 app.get('/api/file/:name', handleFileInfo);
@@ -286,18 +195,22 @@ app.get('/:shortName', (req, res, next) => {
     return;
   }
 
-  const file = getFileByShortName(shortName);
+  const file = getLinkWithFile(shortName);
   if (!file) {
     res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
     return;
   }
 
-  if (!isFileAvailable(file)) {
-    if (file.download_count >= file.max_downloads) {
+  if (!isDownloadAllowed(file)) {
+    if (!fs.existsSync(file.stored_path)) {
+      res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
+      return;
+    }
+    if (isLinkExhausted(file)) {
       res.status(403).sendFile(path.join(__dirname, '..', 'public', 'limit.html'));
       return;
     }
-    res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
+    res.status(403).sendFile(path.join(__dirname, '..', 'public', 'link-expired.html'));
     return;
   }
 
@@ -306,13 +219,8 @@ app.get('/:shortName', (req, res, next) => {
     return;
   }
 
-  if (!fs.existsSync(file.stored_path)) {
-    res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
-    return;
-  }
-
-  const { incrementDownloadCount } = require('./db');
-  incrementDownloadCount(file.id);
+  incrementLinkDownloadCount(file.link_id);
+  incrementStoredFileDownloadCount(file.stored_file_id);
   res.download(file.stored_path, file.original_name);
 });
 

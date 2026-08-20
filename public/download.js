@@ -82,7 +82,10 @@ function renderForm() {
   if (!fileInfo) return;
 
   title.textContent = fileInfo.originalName;
-  fileMeta.textContent = `Скачиваний: ${fileInfo.downloadCount}/${fileInfo.maxDownloads}`;
+  fileMeta.textContent = [
+    `Ссылка: ${fileInfo.linkDownloadCount}/${fileInfo.linkMaxDownloads ?? '∞'}`,
+    `Файл: ${fileInfo.fileDownloadCount}/${fileInfo.fileMaxDownloads ?? '∞'}`,
+  ].join(' · ');
 
   if (!fileInfo.hasGates) {
     show(openDownload);

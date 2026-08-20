@@ -7,6 +7,7 @@ const {
   getToken,
   markTokenUsed,
   getUserByEmail,
+  getUserById,
 } = require('./db');
 const { hashSecret, verifySecret } = require('./password');
 const { sendEmail } = require('./email');
@@ -133,7 +134,7 @@ function handleChangePassword(req, res) {
     return;
   }
 
-  const user = require('./db').getUserById(req.session.userId);
+  const user = getUserById(req.session.userId);
   if (!user) {
     res.status(401).json({ error: 'Требуется вход пользователя' });
     return;

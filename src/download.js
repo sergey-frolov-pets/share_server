@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  getFileByShortName,
-  incrementDownloadCount,
+  getLinkWithFile,
+  incrementLinkDownloadCount,
+  incrementStoredFileDownloadCount,
   getUserById,
   getUserByEmail,
 } = require('./db');
@@ -17,14 +18,19 @@ const {
   isUserRegistered,
 } = require('./access');
 const { sendRegistrationInvite } = require('./users');
+const {
+  isLinkAvailable,
+  isLinkExhausted,
+  isStoredFileAvailable,
+} = require('./limits');
 
 const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
-function isFileAvailable(file) {
-  if (!file) return false;
-  const expired = new Date(file.expires_at) <= new Date();
-  const exhausted = file.download_count >= file.max_downloads;
-  return !expired && !exhausted;
+function isDownloadAllowed(row) {
+  if (!row) return false;
+  if (!isStoredFileAvailable(row)) return false;
+  if (!fs.existsSync(row.stored_path)) return false;
+  return isLinkAvailable(row);
 }
 
 function ensureDownloadGrants(req) {
@@ -56,29 +62,33 @@ function getSessionUserEmail(req) {
   return user?.email || null;
 }
 
-function buildFileInfo(file) {
+function buildFileInfo(row) {
   return {
-    shortName: file.short_name,
-    originalName: file.original_name,
-    maxDownloads: file.max_downloads,
-    downloadCount: file.download_count,
-    expiresAt: file.expires_at,
-    available: isFileAvailable(file),
-    requiresDownloadPassword: fileHasDownloadPassword(file),
-    requiresAccess: fileHasAccessRestrictions(file),
-    hasGates: fileHasGates(file),
+    shortName: row.short_name,
+    originalName: row.original_name,
+    linkMaxDownloads: row.link_max_downloads,
+    linkDownloadCount: row.link_download_count,
+    linkExpiresAt: row.link_expires_at,
+    fileMaxDownloads: row.delete_max_downloads,
+    fileDownloadCount: row.total_download_count,
+    fileDeleteAt: row.delete_at,
+    available: isDownloadAllowed(row),
+    linkAvailable: isLinkAvailable(row),
+    requiresDownloadPassword: fileHasDownloadPassword(row),
+    requiresAccess: fileHasAccessRestrictions(row),
+    hasGates: fileHasGates(row),
   };
 }
 
 function handleFileInfo(req, res) {
-  const file = getFileByShortName(req.params.name);
-  if (!file) {
+  const row = getLinkWithFile(req.params.name);
+  if (!row) {
     res.status(404).json({ error: 'Файл не найден' });
     return;
   }
 
   res.json({
-    ...buildFileInfo(file),
+    ...buildFileInfo(row),
     userEmail: getSessionUserEmail(req),
   });
 }
@@ -101,35 +111,40 @@ async function resolveAccessEmail(req, body) {
 
 async function handleAuthorizeDownload(req, res) {
   const shortName = req.params.name;
-  const file = getFileByShortName(shortName);
+  const row = getLinkWithFile(shortName);
 
-  if (!file) {
+  if (!row) {
     res.status(404).json({ error: 'Файл не найден' });
     return;
   }
 
-  if (!isFileAvailable(file)) {
-    res.status(403).json({ error: 'Файл недоступен' });
+  if (!isStoredFileAvailable(row) || !fs.existsSync(row.stored_path)) {
+    res.status(404).json({ error: 'Файл удалён с сервера' });
+    return;
+  }
+
+  if (!isLinkAvailable(row)) {
+    res.status(403).json({ error: 'Ссылка недоступна (лимит или срок истёк)' });
     return;
   }
 
   const { downloadPassword, password } = req.body || {};
 
-  if (fileHasDownloadPassword(file)) {
-    if (!downloadPassword || !verifySecret(downloadPassword, file.download_password_hash)) {
+  if (fileHasDownloadPassword(row)) {
+    if (!downloadPassword || !verifySecret(downloadPassword, row.download_password_hash)) {
       res.status(403).json({ error: 'Неверный пароль для скачивания' });
       return;
     }
   }
 
-  if (fileHasAccessRestrictions(file)) {
+  if (fileHasAccessRestrictions(row)) {
     const access = await resolveAccessEmail(req, req.body);
     if (access.error) {
       res.status(400).json({ error: access.error });
       return;
     }
 
-    if (!isEmailAllowedForFile(access.email, file)) {
+    if (!isEmailAllowedForFile(access.email, row)) {
       res.status(403).json({ error: 'Этот email не имеет доступа к файлу' });
       return;
     }
@@ -160,7 +175,7 @@ async function handleAuthorizeDownload(req, res) {
         });
         return;
       }
-    } else if (!isEmailAllowedForFile(access.email, file)) {
+    } else if (!isEmailAllowedForFile(access.email, row)) {
       res.status(403).json({ error: 'Ваш аккаунт не имеет доступа к этому файлу' });
       return;
     }
@@ -172,40 +187,41 @@ async function handleAuthorizeDownload(req, res) {
 
 function handleDownloadFile(req, res) {
   const shortName = req.params.name;
-  const file = getFileByShortName(shortName);
+  const row = getLinkWithFile(shortName);
 
-  if (!file) {
+  if (!row) {
     res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
     return;
   }
 
-  if (!isFileAvailable(file)) {
-    if (file.download_count >= file.max_downloads) {
+  if (!isStoredFileAvailable(row) || !fs.existsSync(row.stored_path)) {
+    res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
+    return;
+  }
+
+  if (!isLinkAvailable(row)) {
+    if (isLinkExhausted(row)) {
       res.status(403).sendFile(path.join(__dirname, '..', 'public', 'limit.html'));
       return;
     }
-    res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
+    res.status(403).sendFile(path.join(__dirname, '..', 'public', 'link-expired.html'));
     return;
   }
 
-  if (fileHasGates(file) && !hasDownloadGrant(req, shortName)) {
+  if (fileHasGates(row) && !hasDownloadGrant(req, shortName)) {
     res.status(403).json({ error: 'Сначала пройдите проверку доступа' });
     return;
   }
 
-  if (!fs.existsSync(file.stored_path)) {
-    res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
-    return;
-  }
-
-  incrementDownloadCount(file.id);
+  incrementLinkDownloadCount(row.link_id);
+  incrementStoredFileDownloadCount(row.stored_file_id);
   delete ensureDownloadGrants(req)[shortName];
 
-  res.download(file.stored_path, file.original_name);
+  res.download(row.stored_path, row.original_name);
 }
 
-function shouldServeDownloadPage(file) {
-  return fileHasGates(file);
+function shouldServeDownloadPage(row) {
+  return fileHasGates(row);
 }
 
 module.exports = {
@@ -214,6 +230,6 @@ module.exports = {
   handleAuthorizeDownload,
   handleDownloadFile,
   shouldServeDownloadPage,
-  isFileAvailable,
-  fileHasGates,
+  isDownloadAllowed,
+  isLinkExhausted,
 };
