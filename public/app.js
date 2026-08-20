@@ -63,6 +63,8 @@ const updateSuccess = document.getElementById('update-success');
 const uploadQueueEl = document.getElementById('upload-queue');
 const uploadQueueList = document.getElementById('upload-queue-list');
 const uploadQueueResumeHint = document.getElementById('upload-queue-resume-hint');
+const uploadQueueResumeText = document.getElementById('upload-queue-resume-text');
+const uploadQueueResumeBtn = document.getElementById('upload-queue-resume-btn');
 const queuePauseBtn = document.getElementById('queue-pause-btn');
 const queueResumeBtn = document.getElementById('queue-resume-btn');
 const queueClearBtn = document.getElementById('queue-clear-btn');
@@ -83,6 +85,7 @@ let updateUploader = null;
 let nameCheckTimeout = null;
 let editingShortName = null;
 let lastUploadQueueSnapshot = null;
+let lastFileRestoreState = null;
 
 function initIconButtons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((btn) => {
@@ -402,18 +405,114 @@ function isUploadQueueProgressOnlyUpdate(prev, state) {
   });
 }
 
-function updateUploadQueueResumeHint(state) {
-  if (!uploadQueueResumeHint) return;
+function updateUploadQueueResumeHint(state, restoreState = lastFileRestoreState) {
+  if (!uploadQueueResumeHint || !uploadQueueResumeText) return;
+
   const needsReselect = state.items.some((item) => (
     item.sessionId && !item.file && ['remote', 'paused'].includes(item.status)
   ));
   const isUploading = state.items.some((item) => item.status === 'uploading');
-  if (needsReselect && !isUploading) {
-    uploadQueueResumeHint.textContent = 'Сейчас загрузка не идёт — скорость появится, когда выберете те же файлы в зоне выше.';
-    show(uploadQueueResumeHint);
-  } else {
+
+  if (!needsReselect || isUploading) {
     hide(uploadQueueResumeHint);
+    if (uploadQueueResumeBtn) hide(uploadQueueResumeBtn);
+    return;
   }
+
+  show(uploadQueueResumeHint);
+
+  if (restoreState?.pendingPermission > 0) {
+    uploadQueueResumeText.textContent = 'Файлы сохранены в браузере. Нажмите «Возобновить загрузку», чтобы продолжить после обновления страницы.';
+    if (uploadQueueResumeBtn) show(uploadQueueResumeBtn);
+    return;
+  }
+
+  uploadQueueResumeText.textContent = 'Выберите те же файлы в зоне выше — браузер не сохранил к ним доступ после обновления.';
+  if (uploadQueueResumeBtn) hide(uploadQueueResumeBtn);
+}
+
+async function tryRestoreStoredFiles(allowRequest = false) {
+  const result = await uploadQueue.restoreFilesFromStoredHandles({ allowRequest });
+  lastFileRestoreState = result;
+  updateUploadQueueResumeHint(uploadQueue.getState(), result);
+  if (result.restored > 0) {
+    resetDropZoneHint();
+  }
+  return result;
+}
+
+async function ingestFilesForUpload(files, handles = []) {
+  const list = Array.from(files || []).filter(Boolean);
+  if (!list.length) return;
+
+  if (global.FileHandleStore?.saveHandle) {
+    await Promise.all(list.map(async (file, index) => {
+      const handle = handles[index];
+      if (handle) {
+        await global.FileHandleStore.saveHandle(file, handle);
+      }
+    }));
+  }
+
+  enqueueFiles(list);
+}
+
+async function filesFromDropEvent(event) {
+  const files = [];
+  const handles = [];
+  const items = [...(event.dataTransfer?.items || [])];
+
+  for (const item of items) {
+    if (item.kind !== 'file') continue;
+
+    if (typeof item.getAsFileSystemHandle === 'function') {
+      try {
+        const handle = await item.getAsFileSystemHandle();
+        if (handle?.kind === 'file') {
+          files.push(await handle.getFile());
+          handles.push(handle);
+          continue;
+        }
+      } catch (_err) {
+        // fallback to File
+      }
+    }
+
+    const file = item.getAsFile();
+    if (file) {
+      files.push(file);
+      handles.push(null);
+    }
+  }
+
+  if (!files.length && event.dataTransfer?.files?.length) {
+    return {
+      files: [...event.dataTransfer.files],
+      handles: [...event.dataTransfer.files].map(() => null),
+    };
+  }
+
+  return { files, handles };
+}
+
+async function pickFilesForUpload() {
+  if (typeof window.showOpenFilePicker === 'function') {
+    try {
+      const pickedHandles = await window.showOpenFilePicker({ multiple: true });
+      const files = [];
+      const handles = [];
+      await Promise.all(pickedHandles.map(async (handle) => {
+        files.push(await handle.getFile());
+        handles.push(handle);
+      }));
+      await ingestFilesForUpload(files, handles);
+      return;
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+    }
+  }
+
+  fileInput.click();
 }
 
 function renderUploadQueue(state) {
@@ -521,10 +620,14 @@ async function restoreActiveUploads() {
     if (uploadQueue.syncSessionsFromServer(sessions)) {
       show(uploadQueueEl);
     }
-    const hasRemote = Array.isArray(sessions) && sessions.some((session) => session.status !== 'paused');
+    const restoreResult = await tryRestoreStoredFiles(false);
+    const hasRemote = uploadQueue.hasRemoteSessionsWaitingForFile?.()
+      || (Array.isArray(sessions) && sessions.some((session) => session.status !== 'paused'));
     const dropHint = dropZone.querySelector('.hint');
     if (dropHint && hasRemote) {
-      dropHint.textContent = 'выберите те же файлы — тогда начнётся загрузка и появится скорость';
+      dropHint.textContent = restoreResult.restored > 0
+        ? 'загрузка восстановлена автоматически'
+        : 'выберите те же файлы или нажмите «Возобновить загрузку»';
     }
   } catch (_err) {
     // ignore restore errors on load
@@ -851,7 +954,9 @@ storageLimitForm.addEventListener('submit', async (e) => {
   }
 });
 
-dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('click', () => {
+  pickFilesForUpload().catch(() => {});
+});
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
   dropZone.classList.add('dragover');
@@ -860,16 +965,22 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
-  const files = [...e.dataTransfer.files];
-  if (!files.length) return;
-  enqueueFiles(files);
+  filesFromDropEvent(e)
+    .then(({ files, handles }) => ingestFilesForUpload(files, handles))
+    .catch(() => {});
 });
 
 fileInput.addEventListener('change', () => {
   const files = [...fileInput.files];
-  if (files.length) enqueueFiles(files);
+  if (files.length) ingestFilesForUpload(files);
   fileInput.value = '';
 });
+
+if (uploadQueueResumeBtn) {
+  uploadQueueResumeBtn.addEventListener('click', () => {
+    tryRestoreStoredFiles(true).catch(() => {});
+  });
+}
 
 queuePauseBtn.addEventListener('click', () => uploadQueue.pauseQueue());
 queueResumeBtn.addEventListener('click', () => uploadQueue.resumeQueue());
