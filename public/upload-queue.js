@@ -366,11 +366,33 @@
       this.syncSessionsFromServer(data.sessions || []);
     }
 
-    findItemForFile(file) {
+    getNextWaitingRemote() {
       return this.items.find((item) => (
-        fileMatchesItem(file, item)
-        && !['shared', 'cancelled'].includes(item.status)
-      ));
+        !item.file
+        && item.sessionId
+        && ['remote', 'paused'].includes(item.status)
+        && !this.uploaders.has(item.id)
+      )) || null;
+    }
+
+    findRemoteMatchForFile(file) {
+      return this.items.find((item) => (
+        item.sessionId
+        && fileMatchesItem(file, item)
+        && ['remote', 'paused'].includes(item.status)
+        && !this.isSessionAlreadyUploading(item.sessionId, item.id)
+      )) || null;
+    }
+
+    attachFileToItem(itemId, file) {
+      const item = this.getItem(itemId);
+      if (!item || !file) return false;
+      if (!fileMatchesItem(file, item)) return false;
+      if (item.status === 'ready') return true;
+      if ((item.status === 'uploading' || this.uploaders.has(item.id)) && item.file) {
+        return true;
+      }
+      return this.reattachFileToItem(item, file);
     }
 
     isSessionAlreadyUploading(sessionId, exceptItemId = null) {
@@ -399,6 +421,7 @@
       }
 
       if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
+        this.notify();
         return true;
       }
 
@@ -407,25 +430,27 @@
         return true;
       }
 
-      if (item.status === 'pending' || item.status === 'paused') {
+      if (item.status === 'pending') {
         if (!this.uploaders.has(item.id)) {
-          item.status = 'pending';
           this.start();
         }
+        this.notify();
         return true;
       }
 
       return false;
     }
 
-    attachRemoteFile(file) {
-      const match = this.items.find((item) => (
-        !item.file
-        && item.sessionId
-        && fileMatchesItem(file, item)
-        && ['remote', 'paused'].includes(item.status)
-      ));
+    attachRemoteFile(file, targetItemId = null) {
+      if (targetItemId) {
+        const target = this.getItem(targetItemId);
+        if (target && ['remote', 'paused'].includes(target.status)) {
+          return this.attachFileToItem(targetItemId, file);
+        }
+        return false;
+      }
 
+      const match = this.findRemoteMatchForFile(file);
       if (!match) return false;
 
       if (this.isSessionAlreadyUploading(match.sessionId, match.id)) {
@@ -478,36 +503,58 @@
       };
     }
 
+    addFile(file, targetItemId = null) {
+      if (!file) return false;
+
+      if (this.attachRemoteFile(file, targetItemId)) {
+        this.notify();
+        return true;
+      }
+
+      const existing = this.findItemForFile(file);
+      if (existing && this.reattachFileToItem(existing, file)) {
+        this.notify();
+        return true;
+      }
+
+      if (targetItemId) {
+        return false;
+      }
+
+      this.items.push({
+        id: createItemId(),
+        file,
+        sessionId: null,
+        serverStatus: null,
+        name: file.name,
+        size: file.size,
+        status: 'pending',
+        progress: 0,
+        bytesReceived: 0,
+        etaSeconds: null,
+        speedBps: null,
+        uploadId: null,
+        error: null,
+      });
+      this.notify();
+      this.start();
+      return true;
+    }
+
+    findItemForFile(file) {
+      return this.items.find((item) => (
+        fileMatchesItem(file, item)
+        && !['shared', 'cancelled'].includes(item.status)
+      ));
+    }
+
     addFiles(fileList) {
       const files = Array.from(fileList || []).filter(Boolean);
       if (!files.length) return;
 
       for (const file of files) {
-        if (this.attachRemoteFile(file)) continue;
-
-        const existing = this.findItemForFile(file);
-        if (existing && this.reattachFileToItem(existing, file)) {
-          continue;
-        }
-
-        this.items.push({
-          id: createItemId(),
-          file,
-          sessionId: null,
-          serverStatus: null,
-          name: file.name,
-          size: file.size,
-          status: 'pending',
-          progress: 0,
-          bytesReceived: 0,
-          etaSeconds: null,
-          speedBps: null,
-          uploadId: null,
-          error: null,
-        });
+        this.addFile(file);
       }
-      this.notify();
-      this.start();
     }
 
     getItem(id) {

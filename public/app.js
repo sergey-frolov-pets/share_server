@@ -87,6 +87,7 @@ let editingShortName = null;
 let lastUploadQueueSnapshot = null;
 let lastFileRestoreState = null;
 let pickingFiles = false;
+let pickTargetQueueId = null;
 
 function initIconButtons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((btn) => {
@@ -316,7 +317,9 @@ function formatQueueItemBadge(item) {
 function buildQueueItemToolbar(item) {
   const parts = [];
 
-  if (['uploading', 'pending', 'remote'].includes(item.status)) {
+  if (item.status === 'remote') {
+    parts.push(`<button type="button" class="queue-tool-btn queue-pick-file-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('upload', 14)}</span><span>Выбрать файл</span></button>`);
+  } else if (['uploading', 'pending'].includes(item.status)) {
     parts.push(`<button type="button" class="queue-tool-btn queue-pause-item-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('pause', 14)}</span><span>Пауза</span></button>`);
   } else if (item.status === 'paused') {
     parts.push(`<button type="button" class="queue-tool-btn queue-resume-item-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('play', 14)}</span><span>Продолжить</span></button>`);
@@ -387,6 +390,11 @@ function bindUploadQueueItemEvents(root = uploadQueueList) {
   root.querySelectorAll('.queue-resume-item-btn').forEach((btn) => {
     btn.addEventListener('click', () => uploadQueue.resumeItem(btn.dataset.queueId));
   });
+  root.querySelectorAll('.queue-pick-file-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pickFileForUpload(btn.dataset.queueId).catch(() => {});
+    });
+  });
   initIconButtons(root);
 }
 
@@ -423,12 +431,12 @@ function updateUploadQueueResumeHint(state, restoreState = lastFileRestoreState)
   show(uploadQueueResumeHint);
 
   if (restoreState?.pendingPermission > 0) {
-    uploadQueueResumeText.textContent = 'Файлы сохранены в браузере. Нажмите «Возобновить загрузку», чтобы продолжить после обновления страницы.';
+    uploadQueueResumeText.textContent = 'Файлы сохранены в браузере. Нажмите «Возобновить загрузку» или «Выбрать файл» у нужной строки.';
     if (uploadQueueResumeBtn) show(uploadQueueResumeBtn);
     return;
   }
 
-  uploadQueueResumeText.textContent = 'Выберите те же файлы в зоне выше — браузер не сохранил к ним доступ после обновления.';
+  uploadQueueResumeText.textContent = 'Нажмите «Выбрать файл» у нужной строки в очереди — по одному.';
   if (uploadQueueResumeBtn) hide(uploadQueueResumeBtn);
 }
 
@@ -442,20 +450,26 @@ async function tryRestoreStoredFiles(allowRequest = false) {
   return result;
 }
 
-async function ingestFilesForUpload(files, handles = []) {
-  const list = Array.from(files || []).filter(Boolean);
-  if (!list.length) return;
+async function ingestFileForUpload(file, handle = null, targetItemId = null) {
+  if (!file) return false;
 
-  if (global.FileHandleStore?.saveHandle) {
-    await Promise.all(list.map(async (file, index) => {
-      const handle = handles[index];
-      if (handle) {
-        await global.FileHandleStore.saveHandle(file, handle);
-      }
-    }));
+  const queueId = targetItemId || pickTargetQueueId;
+  pickTargetQueueId = null;
+
+  if (global.FileHandleStore?.saveHandle && handle) {
+    await global.FileHandleStore.saveHandle(file, handle);
   }
 
-  enqueueFiles(list);
+  const added = uploadQueue.addFile(file, queueId || null);
+  if (added) {
+    show(uploadQueueEl);
+    hide(result);
+    setMessage(shareError, null);
+    updateDropZoneHintForQueue();
+  } else if (queueId) {
+    setMessage(shareError, 'Выбран другой файл — нужен тот же, что в очереди', 'error');
+  }
+  return added;
 }
 
 async function filesFromDropEvent(event) {
@@ -496,26 +510,44 @@ async function filesFromDropEvent(event) {
   return { files, handles };
 }
 
-async function pickFilesForUpload() {
+async function fileFromDropEvent(event) {
+  const { files, handles } = await filesFromDropEvent(event);
+  if (!files.length) return null;
+  return {
+    file: files[0],
+    handle: handles[0] || null,
+    ignoredCount: Math.max(0, files.length - 1),
+  };
+}
+
+async function pickFileForUpload(targetItemId = null) {
   if (pickingFiles) return;
   pickingFiles = true;
+  pickTargetQueueId = targetItemId || null;
   try {
     if (typeof window.showOpenFilePicker === 'function') {
       try {
-        const pickedHandles = await window.showOpenFilePicker({ multiple: true });
-        const files = [];
-        const handles = [];
-        await Promise.all(pickedHandles.map(async (handle) => {
-          files.push(await handle.getFile());
-          handles.push(handle);
-        }));
-        await ingestFilesForUpload(files, handles);
+        const [handle] = await window.showOpenFilePicker({ multiple: false });
+        const file = await handle.getFile();
+        await ingestFileForUpload(file, handle, targetItemId);
         return;
       } catch (err) {
-        if (err?.name === 'AbortError') return;
+        if (err?.name === 'AbortError') {
+          pickTargetQueueId = null;
+          return;
+        }
       }
     }
 
+    const onWindowFocus = () => {
+      window.removeEventListener('focus', onWindowFocus);
+      setTimeout(() => {
+        if (!fileInput.files?.length) {
+          pickTargetQueueId = null;
+        }
+      }, 300);
+    };
+    window.addEventListener('focus', onWindowFocus);
     fileInput.click();
   } finally {
     pickingFiles = false;
@@ -533,6 +565,7 @@ function renderUploadQueue(state) {
 
   show(uploadQueueEl);
   updateUploadQueueResumeHint(state);
+  updateDropZoneHintForQueue();
 
   if (isUploadQueueProgressOnlyUpdate(lastUploadQueueSnapshot, state)) {
     state.items.forEach((item) => {
@@ -628,32 +661,41 @@ async function restoreActiveUploads() {
       show(uploadQueueEl);
     }
     const restoreResult = await tryRestoreStoredFiles(false);
-    const hasRemote = uploadQueue.hasRemoteSessionsWaitingForFile?.()
-      || (Array.isArray(sessions) && sessions.some((session) => session.status !== 'paused'));
-    const dropHint = dropZone.querySelector('.hint');
-    if (dropHint && hasRemote) {
-      dropHint.textContent = restoreResult.restored > 0
-        ? 'загрузка восстановлена автоматически'
-        : 'выберите те же файлы или нажмите «Возобновить загрузку»';
-    }
+    updateDropZoneHintForQueue();
+    const hasRemote = uploadQueue.hasRemoteSessionsWaitingForFile?.();
   } catch (_err) {
     // ignore restore errors on load
   }
 }
 
+function updateDropZoneHintForQueue() {
+  const dropHint = dropZone.querySelector('.hint');
+  if (!dropHint) return;
+
+  const next = uploadQueue.getNextWaitingRemote?.();
+  if (next) {
+    const name = next.name.length > 40 ? `${next.name.slice(0, 37)}…` : next.name;
+    dropHint.textContent = `выберите один файл: ${name}`;
+    return;
+  }
+
+  resetDropZoneHint();
+}
+
 function resetDropZoneHint() {
   const dropHint = dropZone.querySelector('.hint');
   if (dropHint) {
-    dropHint.textContent = 'или выберите несколько — до 3 файлов параллельно';
+    dropHint.textContent = 'или нажмите — один файл за раз, до 3 параллельно';
   }
 }
 
-function enqueueFiles(fileList) {
-  if (!fileList || !fileList.length) return;
-  uploadQueue.addFiles(fileList);
+function enqueueFile(file) {
+  if (!file) return;
+  uploadQueue.addFile(file);
   show(uploadQueueEl);
   hide(result);
   setMessage(shareError, null);
+  updateDropZoneHintForQueue();
 }
 
 function resetManageState() {
@@ -696,7 +738,7 @@ function handleFile(file, isUpdate = false) {
     startUpdateUpload(file);
     return;
   }
-  enqueueFiles([file]);
+  enqueueFile(file);
 }
 
 function startUpdateUpload(file) {
@@ -962,7 +1004,7 @@ storageLimitForm.addEventListener('submit', async (e) => {
 });
 
 dropZone.addEventListener('click', () => {
-  pickFilesForUpload().catch(() => {});
+  pickFileForUpload().catch(() => {});
 });
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
@@ -972,14 +1014,26 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
-  filesFromDropEvent(e)
-    .then(({ files, handles }) => ingestFilesForUpload(files, handles))
+  fileFromDropEvent(e)
+    .then((payload) => {
+      if (!payload?.file) return;
+      if (payload.ignoredCount > 0) {
+        setMessage(shareError, 'Перетащите один файл за раз', 'error');
+      } else {
+        setMessage(shareError, null);
+      }
+      return ingestFileForUpload(payload.file, payload.handle);
+    })
     .catch(() => {});
 });
 
 fileInput.addEventListener('change', () => {
-  const files = [...fileInput.files];
-  if (files.length) ingestFilesForUpload(files);
+  const file = fileInput.files?.[0];
+  const queueId = pickTargetQueueId;
+  pickTargetQueueId = null;
+  if (file) {
+    ingestFileForUpload(file, null, queueId).catch(() => {});
+  }
   fileInput.value = '';
 });
 
