@@ -3,14 +3,41 @@
     pending: 'В очереди',
     uploading: 'Загрузка…',
     paused: 'Пауза',
+    awaiting_file: 'Выберите файл',
     ready: 'Готов к публикации',
     shared: 'Ссылка создана',
     error: 'Ошибка',
     cancelled: 'Отменено',
   };
 
+  const STORAGE_PREFIX = global.CHUNK_UPLOAD_STORAGE_PREFIX || 'shareChunkUpload:';
+
   function createItemId() {
     return `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function storageKey(apiPrefix, file) {
+    if (global.getChunkUploadStorageKey) {
+      return global.getChunkUploadStorageKey(apiPrefix, file);
+    }
+    return `${STORAGE_PREFIX}${apiPrefix}:${file.name}:${file.size}:${file.lastModified}`;
+  }
+
+  function clearSessionStorageForSession(sessionId) {
+    if (!sessionId) return;
+    const keysToRemove = [];
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const key = sessionStorage.key(index);
+      if (key && sessionStorage.getItem(key) === sessionId) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => sessionStorage.removeItem(key));
+  }
+
+  function mapServerStatus(status) {
+    if (status === 'paused') return 'paused';
+    return 'awaiting_file';
   }
 
   class UploadQueue {
@@ -51,14 +78,66 @@
       this.onChange(this.getState());
     }
 
+    restoreSessions(sessions) {
+      const entries = Array.isArray(sessions) ? sessions : [];
+      if (!entries.length) return false;
+
+      let changed = false;
+      for (const session of entries) {
+        if (!session?.sessionId) continue;
+        if (this.items.some((item) => item.sessionId === session.sessionId)) continue;
+
+        this.items.push({
+          id: createItemId(),
+          file: null,
+          sessionId: session.sessionId,
+          name: session.originalName,
+          size: session.totalSize,
+          status: mapServerStatus(session.status),
+          progress: session.progress || 0,
+          uploadId: null,
+          error: null,
+        });
+        changed = true;
+      }
+
+      if (changed) {
+        this.notify();
+      }
+      return changed;
+    }
+
+    attachAwaitingFile(file) {
+      const match = this.items.find((item) => (
+        !item.file
+        && item.sessionId
+        && item.name === file.name
+        && item.size === file.size
+        && ['awaiting_file', 'paused'].includes(item.status)
+      ));
+
+      if (!match) return false;
+
+      match.file = file;
+      match.status = 'pending';
+      match.error = null;
+      sessionStorage.setItem(storageKey(this.apiPrefix, file), match.sessionId);
+      this.notify();
+      this.start();
+      return true;
+    }
+
     addFiles(fileList) {
       const files = Array.from(fileList || []).filter(Boolean);
       if (!files.length) return;
 
       for (const file of files) {
+        if (this.attachAwaitingFile(file)) continue;
+
         this.items.push({
           id: createItemId(),
           file,
+          sessionId: null,
           name: file.name,
           size: file.size,
           status: 'pending',
@@ -127,6 +206,11 @@
       if (this.currentItemId === id && this.currentUploader) {
         this.currentUploader.cancel().catch(() => {});
         this.currentUploader = null;
+      } else if (item.sessionId) {
+        this.fetchFn(`${this.apiPrefix}/cancel/${item.sessionId}`, {
+          method: 'DELETE',
+        }).catch(() => {});
+        clearSessionStorageForSession(item.sessionId);
       }
 
       item.status = 'cancelled';
@@ -145,7 +229,7 @@
     async start() {
       if (this.running || this.queuePaused) return;
 
-      const next = this.items.find((item) => item.status === 'pending');
+      const next = this.items.find((item) => item.status === 'pending' && item.file);
       if (!next) return;
 
       this.running = true;
@@ -154,6 +238,10 @@
       next.error = null;
       this.onActiveItem(next);
       this.notify();
+
+      if (next.sessionId) {
+        sessionStorage.setItem(storageKey(this.apiPrefix, next.file), next.sessionId);
+      }
 
       const uploader = new global.ChunkUploader({
         apiPrefix: this.apiPrefix,
@@ -174,6 +262,7 @@
         this.currentUploader = null;
         if (result?.uploadId) {
           next.uploadId = result.uploadId;
+          next.sessionId = null;
           next.status = 'ready';
           next.progress = 100;
           this.onActiveItem(next);

@@ -209,6 +209,7 @@ function resetCreateState() {
   updateNamePreview();
   hide(queueResumeBtn);
   show(queuePauseBtn);
+  resetDropZoneHint();
 }
 
 const uploadQueue = new UploadQueue({
@@ -286,20 +287,20 @@ function enqueueDownload(file) {
 
 function formatQueueItemStatus(item) {
   const label = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
-  return item.progress && ['pending', 'uploading', 'paused'].includes(item.status)
+  return item.progress && ['pending', 'uploading', 'paused', 'awaiting_file'].includes(item.status)
     ? `${label} · ${item.progress}%`
     : label;
 }
 
 function buildUploadQueueItemHtml(item, currentItemId) {
   const activeClass = item.id === currentItemId ? ' active' : '';
-  const progressHtml = ['pending', 'uploading', 'paused'].includes(item.status)
+  const progressHtml = ['pending', 'uploading', 'paused', 'awaiting_file'].includes(item.status)
     ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
     : '';
   const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
   const actionsHtml = [
     item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : '',
-    ['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
+    ['pending', 'uploading', 'paused', 'ready', 'awaiting_file'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
   ].filter(Boolean).join('');
 
   return `
@@ -340,7 +341,8 @@ function isUploadQueueProgressOnlyUpdate(prev, state) {
       && previous.id === item.id
       && previous.status === item.status
       && previous.error === item.error
-      && previous.uploadId === item.uploadId;
+      && previous.uploadId === item.uploadId
+      && previous.sessionId === item.sessionId;
   });
 }
 
@@ -414,6 +416,30 @@ async function handleQueueActiveItem(item) {
   hide(shareForm);
   hide(shareFileLabel);
   shareBtn.disabled = true;
+}
+
+async function restoreActiveUploads() {
+  try {
+    const { sessions } = await api('/api/upload/sessions');
+    if (uploadQueue.restoreSessions(sessions)) {
+      show(uploadQueueEl);
+      const dropHint = dropZone.querySelector('.hint');
+      if (dropHint) {
+        dropHint.textContent = sessions.length
+          ? 'выберите тот же файл для продолжения загрузки'
+          : 'или выберите несколько — загрузка по очереди';
+      }
+    }
+  } catch (_err) {
+    // ignore restore errors on load
+  }
+}
+
+function resetDropZoneHint() {
+  const dropHint = dropZone.querySelector('.hint');
+  if (dropHint) {
+    dropHint.textContent = 'или выберите несколько — загрузка по очереди';
+  }
 }
 
 function enqueueFiles(fileList) {
@@ -792,6 +818,7 @@ loginForm.addEventListener('submit', async (e) => {
       }),
     });
     showUpload();
+    await restoreActiveUploads();
   } catch (err) {
     setMessage(loginError, err.message, 'error');
   }
@@ -969,6 +996,7 @@ async function init() {
   const { authenticated } = await api('/api/me');
   if (authenticated) {
     showUpload();
+    await restoreActiveUploads();
   } else {
     showLogin();
   }
