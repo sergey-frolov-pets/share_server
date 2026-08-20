@@ -41,6 +41,14 @@ if [[ ! -f "$APP_DIR/package.json" ]]; then
   die "Не найден package.json в $APP_DIR"
 fi
 
+if ! id "$APP_USER" &>/dev/null; then
+  die "Пользователь приложения не найден: $APP_USER"
+fi
+
+run_as_app() {
+  sudo -u "$APP_USER" env HOME="$APP_DIR" "$@"
+}
+
 log "Каталог: $APP_DIR"
 log "Остановка $SERVICE_NAME..."
 systemctl stop "$SERVICE_NAME" || true
@@ -57,16 +65,18 @@ fi
 cd "$APP_DIR"
 
 if [[ -d .git ]]; then
-  log "git fetch / pull (ветка ${GIT_BRANCH})..."
-  git fetch origin
-  git checkout "$GIT_BRANCH"
-  git pull origin "$GIT_BRANCH"
+  log "git fetch / pull (ветка ${GIT_BRANCH}, пользователь ${APP_USER})..."
+  run_as_app git -C "$APP_DIR" fetch origin
+  run_as_app git -C "$APP_DIR" checkout "$GIT_BRANCH"
+  run_as_app git -C "$APP_DIR" pull origin "$GIT_BRANCH"
 else
   log "Не git-репозиторий — пропуск git pull"
 fi
 
 log "npm install..."
-npm install --omit=dev
+run_as_app npm --prefix "$APP_DIR" install --omit=dev
+
+mkdir -p "$APP_DIR/uploads/temp" "$APP_DIR/uploads/chunks"
 
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 chmod 600 "$APP_DIR/.env" 2>/dev/null || true
@@ -86,7 +96,7 @@ cat <<EOF
 
 ========================================
  Обновление завершено
-  Версия:  $(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  Версия:  $(run_as_app git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   Сервис:  systemctl status ${SERVICE_NAME}
   Логи:    journalctl -u ${SERVICE_NAME} -f
 ========================================
