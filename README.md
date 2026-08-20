@@ -50,3 +50,33 @@ npm start
 - Статистика: пользователи, ссылки, файлы, объём, скачивания
 - **Лимит диска** — макс. общий объём для обмена (МБ)
 - Управление пользователями: галочка «Разрешить загрузку», лимиты (МБ/файл, МБ всего, кол-во файлов, срок)
+
+## Развёртывание на VDS (Ubuntu / VDSina)
+
+### 1. Первичная установка на чистой системе
+
+```bash
+# На сервере (Ubuntu 22.04/24.04)
+sudo apt-get update && sudo apt-get install -y git
+git clone https://github.com/sergey-frolov-pets/share_server.git
+cd share_server
+
+# Настройка (домен, пароли)
+sudo mkdir -p /etc/share-server
+sudo cp scripts/deploy.env.example /etc/share-server/deploy.env
+sudo nano /etc/share-server/deploy.env
+
+sudo bash scripts/deploy.sh --config /etc/share-server/deploy.env
+```
+
+Скрипт `scripts/deploy.sh` установит Node.js, зависимости, systemd-сервис и nginx.
+
+### 2. Обновление
+
+```bash
+sudo bash /opt/share-server/scripts/update.sh
+```
+
+Перед обновлением создаётся бэкап `data/share.db` в `/var/backups/share-server/`.
+
+Конфиг развёртывания: `/etc/share-server/deploy.env` (см. `scripts/deploy.env.example`).
