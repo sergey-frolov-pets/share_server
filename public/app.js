@@ -62,8 +62,6 @@ const resetLinkCountInput = document.getElementById('reset-link-count');
 const updateBtn = document.getElementById('update-btn');
 const updateError = document.getElementById('update-error');
 const updateSuccess = document.getElementById('update-success');
-
-const updateSuccess = document.getElementById('update-success');
 const uploadQueueEl = document.getElementById('upload-queue');
 const uploadQueueList = document.getElementById('upload-queue-list');
 const queuePauseBtn = document.getElementById('queue-pause-btn');
