@@ -303,9 +303,12 @@
         }
 
         const inFlight = this.items.some((item) => (
-          (item.file || item.status === 'uploading' || this.uploaders.has(item.id))
-          && item.name === session.originalName
-          && item.size === session.totalSize
+          item.sessionId === session.sessionId
+          || (
+            (item.file || item.status === 'uploading' || item.status === 'pending' || this.uploaders.has(item.id))
+            && item.name === session.originalName
+            && item.size === session.totalSize
+          )
         ));
         if (inFlight) continue;
 
@@ -400,7 +403,7 @@
       return this.items.some((item) => (
         item.id !== exceptItemId
         && item.sessionId === sessionId
-        && (item.status === 'uploading' || this.uploaders.has(item.id))
+        && this.uploaders.has(item.id)
       ));
     }
 
@@ -421,6 +424,7 @@
       }
 
       if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
+        item.status = 'pending';
         this.notify();
         return true;
       }
@@ -790,6 +794,8 @@
       if (item.status === 'uploading') return;
 
       if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
+        item.status = 'pending';
+        this.notify();
         return;
       }
 
@@ -821,6 +827,12 @@
       uploader.setHandlers({
         onSession: (session) => {
           if (!session?.sessionId || !item.file) return;
+          if (item.sessionId && session.sessionId !== item.sessionId && session.resumed !== true) {
+            this.fetchFn(`${this.apiPrefix}/cancel/${session.sessionId}`, {
+              method: 'DELETE',
+            }).catch(() => {});
+            return;
+          }
           item.sessionId = session.sessionId;
           sessionStorage.setItem(storageKey(this.apiPrefix, item.file), session.sessionId);
           if (global.FileHandleStore?.linkSession) {
@@ -839,7 +851,9 @@
       });
 
       try {
-        const result = await uploader.upload(item.file);
+        const result = await uploader.upload(item.file, {
+          resumeSessionId: item.sessionId || undefined,
+        });
         if (result?.uploadId) {
           item.uploadId = result.uploadId;
           item.sessionId = null;
@@ -855,6 +869,10 @@
           item.serverStatus = 'paused';
         } else if (uploader.cancelled) {
           item.status = 'cancelled';
+        } else if (item.status === 'uploading') {
+          item.status = item.file ? 'paused' : 'remote';
+          item.serverStatus = item.file ? 'paused' : item.serverStatus;
+          item.error = item.error || 'Загрузка не удалась — выберите файл снова';
         }
       } catch (error) {
         if (!uploader.cancelled) {

@@ -121,7 +121,7 @@ function handleInit(req, res, ownerUserId) {
       && existing.status !== CHUNK_STATUSES.CANCELLED
       && existing.status !== CHUNK_STATUSES.COMPLETE
       && assertSessionOwner(existing, ownerUserId)
-      && existing.file_fingerprint === fingerprint
+      && existing.original_name === originalName
       && existing.total_size === size
     ) {
       if (existing.status === CHUNK_STATUSES.PAUSED) {
