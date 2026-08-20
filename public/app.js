@@ -86,6 +86,7 @@ let nameCheckTimeout = null;
 let editingShortName = null;
 let lastUploadQueueSnapshot = null;
 let lastFileRestoreState = null;
+let pickingFiles = false;
 
 function initIconButtons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((btn) => {
@@ -496,23 +497,29 @@ async function filesFromDropEvent(event) {
 }
 
 async function pickFilesForUpload() {
-  if (typeof window.showOpenFilePicker === 'function') {
-    try {
-      const pickedHandles = await window.showOpenFilePicker({ multiple: true });
-      const files = [];
-      const handles = [];
-      await Promise.all(pickedHandles.map(async (handle) => {
-        files.push(await handle.getFile());
-        handles.push(handle);
-      }));
-      await ingestFilesForUpload(files, handles);
-      return;
-    } catch (err) {
-      if (err?.name === 'AbortError') return;
+  if (pickingFiles) return;
+  pickingFiles = true;
+  try {
+    if (typeof window.showOpenFilePicker === 'function') {
+      try {
+        const pickedHandles = await window.showOpenFilePicker({ multiple: true });
+        const files = [];
+        const handles = [];
+        await Promise.all(pickedHandles.map(async (handle) => {
+          files.push(await handle.getFile());
+          handles.push(handle);
+        }));
+        await ingestFilesForUpload(files, handles);
+        return;
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+      }
     }
-  }
 
-  fileInput.click();
+    fileInput.click();
+  } finally {
+    pickingFiles = false;
+  }
 }
 
 function renderUploadQueue(state) {

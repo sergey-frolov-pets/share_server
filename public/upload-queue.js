@@ -63,6 +63,10 @@
     return 0;
   }
 
+  function fileMatchesItem(file, item) {
+    return item.name === file.name && item.size === file.size;
+  }
+
   function sessionToItem(session) {
     const serverStatus = session.status || 'active';
     return {
@@ -299,8 +303,7 @@
         }
 
         const inFlight = this.items.some((item) => (
-          item.file
-          && ['pending', 'uploading'].includes(item.status)
+          (item.file || item.status === 'uploading' || this.uploaders.has(item.id))
           && item.name === session.originalName
           && item.size === session.totalSize
         ));
@@ -363,23 +366,73 @@
       this.syncSessionsFromServer(data.sessions || []);
     }
 
+    findItemForFile(file) {
+      return this.items.find((item) => (
+        fileMatchesItem(file, item)
+        && !['shared', 'cancelled'].includes(item.status)
+      ));
+    }
+
+    isSessionAlreadyUploading(sessionId, exceptItemId = null) {
+      if (!sessionId) return false;
+      return this.items.some((item) => (
+        item.id !== exceptItemId
+        && item.sessionId === sessionId
+        && (item.status === 'uploading' || this.uploaders.has(item.id))
+      ));
+    }
+
+    reattachFileToItem(item, file) {
+      if (!item || !file) return false;
+
+      if (item.status === 'ready') return true;
+
+      if ((item.status === 'uploading' || this.uploaders.has(item.id)) && item.file) {
+        return true;
+      }
+
+      item.file = file;
+      item.error = null;
+
+      if (item.sessionId) {
+        sessionStorage.setItem(storageKey(this.apiPrefix, file), item.sessionId);
+      }
+
+      if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
+        return true;
+      }
+
+      if (['remote', 'paused', 'error'].includes(item.status)) {
+        this.startItemUpload(item);
+        return true;
+      }
+
+      if (item.status === 'pending' || item.status === 'paused') {
+        if (!this.uploaders.has(item.id)) {
+          item.status = 'pending';
+          this.start();
+        }
+        return true;
+      }
+
+      return false;
+    }
+
     attachRemoteFile(file) {
       const match = this.items.find((item) => (
         !item.file
         && item.sessionId
-        && item.name === file.name
-        && item.size === file.size
+        && fileMatchesItem(file, item)
         && ['remote', 'paused'].includes(item.status)
       ));
 
       if (!match) return false;
 
-      match.file = file;
-      match.error = null;
-      sessionStorage.setItem(storageKey(this.apiPrefix, file), match.sessionId);
-      this.notify();
-      this.startItemUpload(match);
-      return true;
+      if (this.isSessionAlreadyUploading(match.sessionId, match.id)) {
+        return true;
+      }
+
+      return this.reattachFileToItem(match, file);
     }
 
     async restoreFilesFromStoredHandles(options = {}) {
@@ -398,6 +451,9 @@
       let pendingPermission = 0;
 
       for (const item of targets) {
+        if (item.file || this.uploaders.has(item.id)) continue;
+        if (this.isSessionAlreadyUploading(item.sessionId, item.id)) continue;
+
         const hasStored = await store.hasStoredSession(item.sessionId);
         if (!hasStored) continue;
 
@@ -428,6 +484,11 @@
 
       for (const file of files) {
         if (this.attachRemoteFile(file)) continue;
+
+        const existing = this.findItemForFile(file);
+        if (existing && this.reattachFileToItem(existing, file)) {
+          continue;
+        }
 
         this.items.push({
           id: createItemId(),
@@ -680,6 +741,10 @@
     async startItemUpload(item) {
       if (!item?.file || this.uploaders.has(item.id)) return;
       if (item.status === 'uploading') return;
+
+      if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
+        return;
+      }
 
       if (this.getActiveUploadCount() >= this.maxConcurrent) {
         item.status = 'pending';

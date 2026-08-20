@@ -124,7 +124,7 @@
   async function getFileBySessionId(sessionId, options = {}) {
     if (!sessionId) return null;
     const record = await runStore('readonly', (store) => getRecord(store, `session:${sessionId}`));
-    return readFileFromRecord(record, options.allowRequest !== false);
+    return readFileFromRecord(record, options.allowRequest === true);
   }
 
   async function getFileByMeta(name, size, lastModified, options = {}) {
@@ -132,7 +132,7 @@
       store,
       `fp:${fingerprintForMeta(name, size, lastModified)}`,
     ));
-    return readFileFromRecord(record, options.allowRequest !== false);
+    return readFileFromRecord(record, options.allowRequest === true);
   }
 
   async function hasStoredSession(sessionId) {
