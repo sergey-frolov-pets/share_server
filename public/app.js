@@ -426,7 +426,10 @@ async function ingestFileForUpload(file, handle = null) {
     updateDropZoneHintForQueue();
   } else {
     const waiting = uploadQueue.getWaitingForFileItems?.() || [];
-    if (waiting.length) {
+    const matched = waiting.some((item) => item.name === file.name && item.size === file.size);
+    if (waiting.length && matched) {
+      setMessage(shareError, 'Не удалось возобновить — попробуйте ещё раз', 'error');
+    } else if (waiting.length) {
       setMessage(shareError, 'Выберите тот же файл, что в очереди — загрузка продолжится автоматически', 'error');
     }
   }
@@ -481,29 +484,17 @@ async function fileFromDropEvent(event) {
   };
 }
 
-async function pickFileForUpload() {
+function pickFileForUpload() {
   if (pickingFiles) return;
   pickingFiles = true;
-  try {
-    if (typeof window.showOpenFilePicker === 'function') {
-      try {
-        const [handle] = await window.showOpenFilePicker({ multiple: false });
-        const file = await handle.getFile();
-        await ingestFileForUpload(file, handle);
-        return;
-      } catch (err) {
-        if (err?.name === 'AbortError') return;
-      }
-    }
-
-    const onWindowFocus = () => {
-      window.removeEventListener('focus', onWindowFocus);
-    };
-    window.addEventListener('focus', onWindowFocus);
-    fileInput.click();
-  } finally {
-    pickingFiles = false;
-  }
+  const onWindowFocus = () => {
+    window.removeEventListener('focus', onWindowFocus);
+    setTimeout(() => {
+      if (!fileInput.files?.length) pickingFiles = false;
+    }, 400);
+  };
+  window.addEventListener('focus', onWindowFocus);
+  fileInput.click();
 }
 
 function renderUploadQueue(state) {
@@ -967,12 +958,7 @@ storageLimitForm.addEventListener('submit', async (e) => {
 });
 
 dropZone.addEventListener('click', () => {
-  tryRestoreStoredFiles(true)
-    .then((result) => {
-      if (result.restored > 0) return;
-      return pickFileForUpload();
-    })
-    .catch(() => pickFileForUpload().catch(() => {}));
+  pickFileForUpload();
 });
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
@@ -996,11 +982,16 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 fileInput.addEventListener('change', () => {
+  pickingFiles = false;
   const file = fileInput.files?.[0];
   if (file) {
     ingestFileForUpload(file, null).catch(() => {});
   }
   fileInput.value = '';
+});
+
+fileInput.addEventListener('cancel', () => {
+  pickingFiles = false;
 });
 
 if (uploadQueueResumeBtn) {
