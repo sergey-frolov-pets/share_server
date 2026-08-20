@@ -1,8 +1,10 @@
 (function (global) {
-  const STORAGE_PREFIX = 'shareChunkUpload:';
-  const MAX_RETRIES = 5;
-  const RETRY_BASE_MS = 2000;
-  const PROGRESS_EMIT_MS = 50;
+  const CONFIG = global.UPLOAD_CONFIG || {};
+  const STORAGE_PREFIX = CONFIG.SESSION_STORAGE_PREFIX || 'shareChunkUpload:';
+  const MAX_RETRIES = CONFIG.CHUNK_UPLOAD_MAX_RETRIES || 5;
+  const RETRY_BASE_MS = CONFIG.CHUNK_UPLOAD_RETRY_BASE_MS || 2000;
+  const PROGRESS_EMIT_MS = CONFIG.NOTIFY_THROTTLE_MS || 50;
+  const PAUSE_POLL_MS = CONFIG.CHUNK_UPLOAD_PAUSE_POLL_MS || 300;
 
   function storageKey(apiPrefix, file) {
     return `${STORAGE_PREFIX}${apiPrefix}:${file.name}:${file.size}:${file.lastModified}`;
@@ -118,7 +120,7 @@
       for (let index = 0; index < totalChunks; index += 1) {
         if (this.cancelled) return;
         while (this.paused) {
-          await sleep(300);
+          await sleep(PAUSE_POLL_MS);
           if (this.cancelled) return;
         }
         if (uploadedSet.has(index)) continue;
