@@ -49,6 +49,12 @@
     return remMin ? `≈ ${hours} ч ${remMin} мин` : `≈ ${hours} ч`;
   }
 
+  function formatTransferSpeed(bytesPerSecond) {
+    const formatBytes = global.formatUploadBytes;
+    if (!formatBytes || !Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return null;
+    return `${formatBytes(bytesPerSecond)}/с`;
+  }
+
   function bytesFromProgress(item) {
     if (Number.isFinite(item.bytesReceived)) return item.bytesReceived;
     if (item.progress && item.size) {
@@ -70,6 +76,7 @@
       progress: session.progress || 0,
       bytesReceived: session.bytesReceived || 0,
       etaSeconds: null,
+      speedBps: null,
       uploadId: null,
       error: null,
     };
@@ -180,6 +187,11 @@
       const total = item.size;
       let detail = `${formatBytes(received)} / ${formatBytes(total)}`;
 
+      if (item.status === 'uploading') {
+        const speed = formatTransferSpeed(item.speedBps);
+        if (speed) detail += ` · ${speed}`;
+      }
+
       const showEta = item.status === 'uploading' && item.etaSeconds != null;
       const eta = showEta ? formatDuration(item.etaSeconds) : null;
       if (eta) {
@@ -203,6 +215,7 @@
       if (sampleIntervalSec && received > prevBytes) {
         const speedBps = (received - prevBytes) / sampleIntervalSec;
         if (speedBps > 0) {
+          item.speedBps = speedBps;
           item.etaSeconds = Math.max(0, (total - received) / speedBps);
         }
         return;
@@ -216,19 +229,23 @@
       const now = Date.now();
       const elapsedSec = (now - tracker.lastTime) / 1000;
 
-      if (elapsedSec >= 0.3 && received > tracker.lastBytes) {
+      if (elapsedSec >= 0.15 && received > tracker.lastBytes) {
         const instantSpeed = (received - tracker.lastBytes) / elapsedSec;
-        tracker.speedBps = tracker.speedBps
-          ? tracker.speedBps * 0.7 + instantSpeed * 0.3
-          : instantSpeed;
-        tracker.lastBytes = received;
-        tracker.lastTime = now;
+        if (elapsedSec >= 0.3) {
+          tracker.speedBps = tracker.speedBps
+            ? tracker.speedBps * 0.7 + instantSpeed * 0.3
+            : instantSpeed;
+          tracker.lastBytes = received;
+          tracker.lastTime = now;
+        }
+        item.speedBps = tracker.speedBps || instantSpeed;
       }
 
-      if (tracker.speedBps > 0 && received < total) {
-        item.etaSeconds = Math.max(0, (total - received) / tracker.speedBps);
+      if (item.speedBps > 0 && received < total) {
+        item.etaSeconds = Math.max(0, (total - received) / item.speedBps);
       } else if (received >= total) {
         item.etaSeconds = 0;
+        item.speedBps = null;
       }
     }
 
@@ -366,6 +383,7 @@
           progress: 0,
           bytesReceived: 0,
           etaSeconds: null,
+          speedBps: null,
           uploadId: null,
           error: null,
         });
@@ -544,6 +562,8 @@
     startItemUpload(item) {
       item.status = 'uploading';
       item.error = null;
+      item.speedBps = null;
+      item._etaTracker = null;
       this.onActiveItem(item);
       this.notify();
       this.updateServerSyncTimer();
