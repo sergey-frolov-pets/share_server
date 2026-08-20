@@ -580,6 +580,15 @@ function deleteChunkUpload(id) {
   db.prepare('DELETE FROM chunk_uploads WHERE id = ?').run(id);
 }
 
+function listActiveChunkUploads(ownerUserId) {
+  return db.prepare(`
+    SELECT * FROM chunk_uploads
+    WHERE owner_user_id = ?
+      AND status NOT IN ('complete', 'cancelled')
+    ORDER BY updated_at DESC
+  `).all(ownerUserId);
+}
+
 function getStaleChunkUploads(hoursOld) {
   return db.prepare(`
     SELECT * FROM chunk_uploads
@@ -797,6 +806,7 @@ module.exports = {
   updateChunkUploadProgress,
   setChunkUploadStatus,
   deleteChunkUpload,
+  listActiveChunkUploads,
   getStaleChunkUploads,
   getUserByEmail,
   getUserById,

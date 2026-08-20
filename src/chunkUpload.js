@@ -7,6 +7,7 @@ const {
   updateChunkUploadProgress,
   setChunkUploadStatus,
   deleteChunkUpload,
+  listActiveChunkUploads,
   createTempUpload,
   checkGlobalStorageQuota,
 } = require('./db');
@@ -342,6 +343,11 @@ function handleComplete(req, res, ownerUserId) {
   });
 }
 
+function handleListSessions(req, res, ownerUserId) {
+  const sessions = listActiveChunkUploads(ownerUserId).map(formatSessionResponse);
+  res.json({ sessions });
+}
+
 function handleUploadConfig(_req, res) {
   res.json({
     maxFileSizeBytes: config.maxFileSizeBytes,
@@ -360,6 +366,9 @@ function registerChunkUploadRoutes(app, {
   });
 
   app.get(`${basePath}/config`, authMiddleware, handleUploadConfig);
+  app.get(`${basePath}/sessions`, authMiddleware, (req, res) => {
+    handleListSessions(req, res, ownerUserIdFromReq(req));
+  });
   app.post(`${basePath}/init`, authMiddleware, (req, res) => {
     handleInit(req, res, ownerUserIdFromReq(req));
   });

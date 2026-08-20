@@ -327,4 +327,6 @@
   global.ChunkUploader = ChunkUploader;
   global.bindChunkUploadControls = bindUploadControls;
   global.formatUploadBytes = formatBytes;
+  global.getChunkUploadStorageKey = storageKey;
+  global.CHUNK_UPLOAD_STORAGE_PREFIX = STORAGE_PREFIX;
 })(window);
