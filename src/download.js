@@ -23,13 +23,14 @@ const {
   isLinkExhausted,
   isStoredFileAvailable,
 } = require('./limits');
+const { storageExists, sendStoredFile } = require('./chunkStorage');
 
 const DOWNLOAD_GRANT_TTL_MS = 5 * 60 * 1000;
 
 function isDownloadAllowed(row) {
   if (!row) return false;
   if (!isStoredFileAvailable(row)) return false;
-  if (!fs.existsSync(row.stored_path)) return false;
+  if (!storageExists(row)) return false;
   return isLinkAvailable(row);
 }
 
@@ -119,7 +120,7 @@ async function handleAuthorizeDownload(req, res) {
     return;
   }
 
-  if (!isStoredFileAvailable(row) || !fs.existsSync(row.stored_path)) {
+  if (!isStoredFileAvailable(row) || !storageExists(row)) {
     res.status(404).json({ error: 'Файл удалён с сервера' });
     return;
   }
@@ -195,7 +196,7 @@ function handleDownloadFile(req, res) {
     return;
   }
 
-  if (!isStoredFileAvailable(row) || !fs.existsSync(row.stored_path)) {
+  if (!isStoredFileAvailable(row) || !storageExists(row)) {
     res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
     return;
   }
@@ -218,7 +219,7 @@ function handleDownloadFile(req, res) {
   incrementStoredFileDownloadCount(row.stored_file_id);
   delete ensureDownloadGrants(req)[shortName];
 
-  res.download(row.stored_path, row.original_name);
+  sendStoredFile(res, row, row.original_name);
 }
 
 function shouldServeDownloadPage(row) {

@@ -56,6 +56,7 @@ const {
   isDownloadAllowed,
   isLinkExhausted,
 } = require('./download');
+const { storageExists } = require('./chunkStorage');
 const { handleRandomName } = require('./randomName');
 const { registerChunkUploadRoutes } = require('./chunkUpload');
 
@@ -326,7 +327,7 @@ app.get('/:shortName', (req, res, next) => {
   }
 
   if (!isDownloadAllowed(file)) {
-    if (!fs.existsSync(file.stored_path)) {
+    if (!storageExists(file)) {
       res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
       return;
     }
@@ -345,7 +346,8 @@ app.get('/:shortName', (req, res, next) => {
 
   incrementLinkDownloadCount(file.link_id);
   incrementStoredFileDownloadCount(file.stored_file_id);
-  res.download(file.stored_path, file.original_name);
+  const { sendStoredFile } = require('./chunkStorage');
+  sendStoredFile(res, file, file.original_name);
 });
 
 startCleanupScheduler(config.cleanupIntervalMs);

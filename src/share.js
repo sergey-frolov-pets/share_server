@@ -15,7 +15,7 @@ const {
   getTempUpload,
   deleteTempUpload,
 } = require('./db');
-const { removeFileFromDisk } = require('./cleanup');
+const { removeStorageFromDisk } = require('./chunkStorage');
 const { hashSecret } = require('./password');
 const { parseAccessInput, parseDomainInput } = require('./access');
 const { parseLimitFields } = require('./limits');
@@ -62,19 +62,43 @@ function parseAccessLists(body) {
 }
 
 function finalizeTempUpload(temp, shortNamePrefix) {
+  const safeName = temp.original_name.replace(/[^\w.\-() ]/g, '_');
+
+  if (temp.is_chunked) {
+    const finalDir = path.join(config.uploadDir, `${shortNamePrefix}__${safeName}`);
+    try {
+      if (fs.existsSync(finalDir)) {
+        fs.rmSync(finalDir, { recursive: true, force: true });
+      }
+      fs.renameSync(temp.stored_path, finalDir);
+    } catch {
+      return { error: 'Не удалось сохранить файл' };
+    }
+    return {
+      finalPath: finalDir,
+      originalName: temp.original_name,
+      isChunked: true,
+      chunkSize: temp.chunk_size,
+      totalChunks: temp.total_chunks,
+    };
+  }
+
   const finalPath = path.join(
     config.uploadDir,
-    `${shortNamePrefix}__${temp.original_name.replace(/[^\w.\-() ]/g, '_')}`
+    `${shortNamePrefix}__${safeName}`
   );
   try {
     fs.renameSync(temp.stored_path, finalPath);
   } catch {
     return { error: 'Не удалось сохранить файл' };
   }
-  return { finalPath, originalName: temp.original_name };
+  return { finalPath, originalName: temp.original_name, isChunked: false };
 }
 
-function getFileSizeBytes(filePath, fallbackSize) {
+function getFileSizeBytes(filePath, fallbackSize, record) {
+  if (record?.is_chunked || record?.file_size || record?.file_size_bytes) {
+    return record.file_size || record.file_size_bytes || fallbackSize || 0;
+  }
   try {
     return fs.statSync(filePath).size;
   } catch {
@@ -87,7 +111,7 @@ function cleanupOrphanStoredFile(storedFileId, excludeLinkId) {
   if (refs > 0) return;
   const stored = getStoredFileById(storedFileId);
   if (!stored) return;
-  removeFileFromDisk(stored.stored_path);
+  removeStorageFromDisk(stored.stored_path, stored.is_chunked);
   deleteStoredFileRecord(storedFileId);
 }
 
@@ -173,7 +197,6 @@ function handleCreateShare(req, res, validateShortName) {
   }
 
   const { linkLimits, fileLimits } = limitsParsed;
-  const fileSizeBytes = getFileSizeBytes(finalized.finalPath, temp.file_size);
 
   try {
     const storedFileId = createStoredFile({
@@ -182,8 +205,11 @@ function handleCreateShare(req, res, validateShortName) {
       deleteMaxDownloads: fileLimits.maxDownloads,
       deleteAt: fileLimits.expiresAt,
       ownerUserId,
-      fileSizeBytes,
+      fileSizeBytes: getFileSizeBytes(finalized.finalPath, temp.file_size, temp),
       description: descriptionParsed.value,
+      isChunked: finalized.isChunked,
+      chunkSize: finalized.chunkSize ?? null,
+      totalChunks: finalized.totalChunks ?? null,
     });
 
     createLink({
@@ -199,7 +225,7 @@ function handleCreateShare(req, res, validateShortName) {
 
     deleteTempUpload(uploadId);
   } catch {
-    removeFileFromDisk(finalized.finalPath);
+    removeStorageFromDisk(finalized.finalPath, finalized.isChunked);
     res.status(409).json({ error: 'Такое имя уже занято' });
     return;
   }
@@ -307,8 +333,11 @@ function handleUpdateShare(req, res, validateShortName) {
       deleteMaxDownloads: fileLimits.maxDownloads,
       deleteAt: fileLimits.expiresAt,
       ownerUserId: row.owner_user_id || null,
-      fileSizeBytes: getFileSizeBytes(finalized.finalPath, temp.file_size),
+      fileSizeBytes: getFileSizeBytes(finalized.finalPath, temp.file_size, temp),
       description,
+      isChunked: finalized.isChunked,
+      chunkSize: finalized.chunkSize ?? null,
+      totalChunks: finalized.totalChunks ?? null,
     });
 
     storedFileId = newStoredId;

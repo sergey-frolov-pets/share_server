@@ -9,37 +9,31 @@ const {
   deleteExpiredTokens,
 } = require('./db');
 const config = require('./config');
+const { removeStorageFromDisk } = require('./chunkStorage');
 
 const STALE_TEMP_HOURS = 24;
 
-function removeFileFromDisk(filePath) {
-  const fs = require('fs');
-  try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-  } catch {
-    // ignore filesystem errors during cleanup
-  }
+function removeFileFromDisk(filePath, isChunked = false) {
+  removeStorageFromDisk(filePath, isChunked);
 }
 
 function cleanupExpiredAndExhausted() {
   const pendingDeletion = getStoredFilesPendingDeletion();
   for (const storedFile of pendingDeletion) {
-    removeFileFromDisk(storedFile.stored_path);
+    removeStorageFromDisk(storedFile.stored_path, storedFile.is_chunked);
     deleteLinksForStoredFile(storedFile.id);
     deleteStoredFileRecord(storedFile.id);
   }
 
   const staleTemps = getStaleTempUploads(STALE_TEMP_HOURS);
   for (const temp of staleTemps) {
-    removeFileFromDisk(temp.stored_path);
+    removeStorageFromDisk(temp.stored_path, temp.is_chunked);
     deleteTempUpload(temp.id);
   }
 
   const staleChunks = getStaleChunkUploads(config.chunkSessionMaxAgeHours);
   for (const chunk of staleChunks) {
-    removeFileFromDisk(chunk.stored_path);
+    removeStorageFromDisk(chunk.stored_path, true);
     deleteChunkUpload(chunk.id);
   }
 

@@ -153,6 +153,32 @@ function migrateOwnershipAndUploadColumns() {
 
 migrateOwnershipAndUploadColumns();
 
+function migrateChunkStorageColumns() {
+  const fileCols = db.prepare('PRAGMA table_info(stored_files)').all().map((c) => c.name);
+  if (!fileCols.includes('is_chunked')) {
+    db.exec('ALTER TABLE stored_files ADD COLUMN is_chunked INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!fileCols.includes('chunk_size')) {
+    db.exec('ALTER TABLE stored_files ADD COLUMN chunk_size INTEGER');
+  }
+  if (!fileCols.includes('total_chunks')) {
+    db.exec('ALTER TABLE stored_files ADD COLUMN total_chunks INTEGER');
+  }
+
+  const tempCols = db.prepare('PRAGMA table_info(temp_uploads)').all().map((c) => c.name);
+  if (!tempCols.includes('is_chunked')) {
+    db.exec('ALTER TABLE temp_uploads ADD COLUMN is_chunked INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!tempCols.includes('chunk_size')) {
+    db.exec('ALTER TABLE temp_uploads ADD COLUMN chunk_size INTEGER');
+  }
+  if (!tempCols.includes('total_chunks')) {
+    db.exec('ALTER TABLE temp_uploads ADD COLUMN total_chunks INTEGER');
+  }
+}
+
+migrateChunkStorageColumns();
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -307,13 +333,20 @@ function createStoredFile(record) {
   const result = db.prepare(`
     INSERT INTO stored_files (
       stored_path, original_name, delete_max_downloads, delete_at,
-      owner_user_id, file_size_bytes, description
+      owner_user_id, file_size_bytes, description,
+      is_chunked, chunk_size, total_chunks
     )
     VALUES (
       @storedPath, @originalName, @deleteMaxDownloads, @deleteAt,
-      @ownerUserId, @fileSizeBytes, @description
+      @ownerUserId, @fileSizeBytes, @description,
+      @isChunked, @chunkSize, @totalChunks
     )
-  `).run(record);
+  `).run({
+    ...record,
+    isChunked: record.isChunked ? 1 : 0,
+    chunkSize: record.chunkSize ?? null,
+    totalChunks: record.totalChunks ?? null,
+  });
   return result.lastInsertRowid;
 }
 
@@ -414,6 +447,10 @@ function getLinkWithFile(shortName) {
       s.delete_max_downloads,
       s.delete_at,
       s.description,
+      s.file_size_bytes,
+      s.is_chunked,
+      s.chunk_size,
+      s.total_chunks,
       s.created_at AS file_created_at
     FROM links l
     JOIN stored_files s ON s.id = l.stored_file_id
@@ -473,9 +510,20 @@ function countLinksForStoredFile(storedFileId, excludeLinkId = null) {
 
 function createTempUpload(record) {
   db.prepare(`
-    INSERT INTO temp_uploads (id, original_name, stored_path, owner_user_id, file_size)
-    VALUES (@id, @originalName, @storedPath, @ownerUserId, @fileSize)
-  `).run(record);
+    INSERT INTO temp_uploads (
+      id, original_name, stored_path, owner_user_id, file_size,
+      is_chunked, chunk_size, total_chunks
+    )
+    VALUES (
+      @id, @originalName, @storedPath, @ownerUserId, @fileSize,
+      @isChunked, @chunkSize, @totalChunks
+    )
+  `).run({
+    ...record,
+    isChunked: record.isChunked ? 1 : 0,
+    chunkSize: record.chunkSize ?? null,
+    totalChunks: record.totalChunks ?? null,
+  });
 }
 
 function getTempUpload(id) {

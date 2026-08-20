@@ -1,5 +1,4 @@
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 const {
@@ -11,7 +10,7 @@ const {
   createTempUpload,
   checkGlobalStorageQuota,
 } = require('./db');
-const { removeFileFromDisk } = require('./cleanup');
+const { removeStorageFromDisk, getSessionChunkDir, ensureChunkDir, writeChunkPart, chunkPartExists, storageExists } = require('./chunkStorage');
 const { assertUserCanUpload } = require('./uploadQuota');
 
 const CHUNK_STATUSES = {
@@ -70,12 +69,9 @@ function formatSessionResponse(session) {
   };
 }
 
-function sanitizeFileName(originalName) {
-  return originalName.replace(/[^\w.\-() ]/g, '_');
-}
 
-function getStoredPath(sessionId, originalName) {
-  return path.join(config.chunkUploadDir, `${sessionId}__${sanitizeFileName(originalName)}`);
+function getStoredPath(sessionId) {
+  return getSessionChunkDir(sessionId);
 }
 
 function assertSessionOwner(session, ownerUserId) {
@@ -86,17 +82,8 @@ function assertSessionOwner(session, ownerUserId) {
   return session.owner_user_id === ownerUserId;
 }
 
-function ensureChunkDir() {
+function ensureChunkDirReady() {
   fs.mkdirSync(config.chunkUploadDir, { recursive: true });
-}
-
-function preallocateFile(storedPath, totalSize) {
-  const fd = fs.openSync(storedPath, 'w');
-  try {
-    fs.ftruncateSync(fd, totalSize);
-  } finally {
-    fs.closeSync(fd);
-  }
 }
 
 function validateFileSize(totalSize) {
@@ -164,10 +151,10 @@ function handleInit(req, res, ownerUserId) {
   const sessionId = crypto.randomBytes(16).toString('hex');
   const chunkSize = config.chunkSizeBytes;
   const totalChunks = computeTotalChunks(size, chunkSize);
-  const storedPath = getStoredPath(sessionId, originalName);
+  const storedPath = getStoredPath(sessionId);
 
-  ensureChunkDir();
-  preallocateFile(storedPath, size);
+  ensureChunkDirReady();
+  ensureChunkDir(storedPath);
 
   createChunkUpload({
     id: sessionId,
@@ -221,7 +208,7 @@ function handleChunk(req, res, ownerUserId) {
   }
 
   const uploadedChunks = parseReceivedChunks(session.received_chunks);
-  if (uploadedChunks.includes(chunkIndex)) {
+  if (uploadedChunks.includes(chunkIndex) && chunkPartExists(session.stored_path, chunkIndex)) {
     res.json(formatSessionResponse(session));
     return;
   }
@@ -241,15 +228,12 @@ function handleChunk(req, res, ownerUserId) {
     return;
   }
 
-  const fd = fs.openSync(session.stored_path, 'r+');
-  try {
-    fs.writeSync(fd, buffer, 0, buffer.length, offset);
-  } finally {
-    fs.closeSync(fd);
-  }
+  writeChunkPart(session.stored_path, chunkIndex, buffer);
 
-  uploadedChunks.push(chunkIndex);
-  uploadedChunks.sort((a, b) => a - b);
+  if (!uploadedChunks.includes(chunkIndex)) {
+    uploadedChunks.push(chunkIndex);
+    uploadedChunks.sort((a, b) => a - b);
+  }
 
   const nextStatus = session.status === CHUNK_STATUSES.PAUSED
     ? CHUNK_STATUSES.ACTIVE
@@ -298,7 +282,7 @@ function handleCancel(req, res, ownerUserId) {
     return;
   }
 
-  removeFileFromDisk(session.stored_path);
+  removeStorageFromDisk(session.stored_path, true);
   setChunkUploadStatus(session.id, CHUNK_STATUSES.CANCELLED);
   deleteChunkUpload(session.id);
   res.json({ ok: true });
@@ -317,14 +301,13 @@ function handleComplete(req, res, ownerUserId) {
     return;
   }
 
-  if (!fs.existsSync(session.stored_path)) {
-    res.status(400).json({ error: 'Файл на сервере не найден' });
-    return;
-  }
-
-  const stat = fs.statSync(session.stored_path);
-  if (stat.size !== session.total_size) {
-    res.status(400).json({ error: 'Размер файла не совпадает' });
+  if (!storageExists({
+    stored_path: session.stored_path,
+    is_chunked: 1,
+    total_chunks: session.total_chunks,
+    file_size_bytes: session.total_size,
+  })) {
+    res.status(400).json({ error: 'Не все части найдены на сервере' });
     return;
   }
 
@@ -336,21 +319,17 @@ function handleComplete(req, res, ownerUserId) {
     }
   }
 
-  fs.mkdirSync(config.tempDir, { recursive: true });
   const uploadId = session.id;
-  const tempPath = path.join(
-    config.tempDir,
-    `${uploadId}__${sanitizeFileName(session.original_name)}`
-  );
-
-  fs.renameSync(session.stored_path, tempPath);
 
   createTempUpload({
     id: uploadId,
     originalName: session.original_name,
-    storedPath: tempPath,
+    storedPath: session.stored_path,
     ownerUserId: session.owner_user_id,
     fileSize: session.total_size,
+    isChunked: true,
+    chunkSize: session.chunk_size,
+    totalChunks: session.total_chunks,
   });
 
   setChunkUploadStatus(session.id, CHUNK_STATUSES.COMPLETE);
