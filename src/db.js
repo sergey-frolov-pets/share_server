@@ -581,6 +581,15 @@ function deleteChunkUpload(id) {
 }
 
 function listActiveChunkUploads(ownerUserId) {
+  if (ownerUserId == null) {
+    return db.prepare(`
+      SELECT * FROM chunk_uploads
+      WHERE owner_user_id IS NULL
+        AND status NOT IN ('complete', 'cancelled')
+      ORDER BY updated_at DESC
+    `).all();
+  }
+
   return db.prepare(`
     SELECT * FROM chunk_uploads
     WHERE owner_user_id = ?

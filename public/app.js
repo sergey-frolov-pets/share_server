@@ -286,21 +286,24 @@ function enqueueDownload(file) {
 }
 
 function formatQueueItemStatus(item) {
+  if (typeof uploadQueue.formatItemStatus === 'function') {
+    return uploadQueue.formatItemStatus(item);
+  }
   const label = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
-  return item.progress && ['pending', 'uploading', 'paused', 'awaiting_file'].includes(item.status)
+  return item.progress && ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
     ? `${label} · ${item.progress}%`
     : label;
 }
 
 function buildUploadQueueItemHtml(item, currentItemId) {
   const activeClass = item.id === currentItemId ? ' active' : '';
-  const progressHtml = ['pending', 'uploading', 'paused', 'awaiting_file'].includes(item.status)
+  const progressHtml = ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
     ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
     : '';
   const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
   const actionsHtml = [
     item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : '',
-    ['pending', 'uploading', 'paused', 'ready', 'awaiting_file'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
+    ['pending', 'uploading', 'paused', 'ready', 'remote'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
   ].filter(Boolean).join('');
 
   return `
@@ -342,7 +345,8 @@ function isUploadQueueProgressOnlyUpdate(prev, state) {
       && previous.status === item.status
       && previous.error === item.error
       && previous.uploadId === item.uploadId
-      && previous.sessionId === item.sessionId;
+      && previous.sessionId === item.sessionId
+      && previous.serverStatus === item.serverStatus;
   });
 }
 
@@ -421,14 +425,13 @@ async function handleQueueActiveItem(item) {
 async function restoreActiveUploads() {
   try {
     const { sessions } = await api('/api/upload/sessions');
-    if (uploadQueue.restoreSessions(sessions)) {
+    if (uploadQueue.syncSessionsFromServer(sessions)) {
       show(uploadQueueEl);
-      const dropHint = dropZone.querySelector('.hint');
-      if (dropHint) {
-        dropHint.textContent = sessions.length
-          ? 'выберите тот же файл для продолжения загрузки'
-          : 'или выберите несколько — загрузка по очереди';
-      }
+    }
+    const hasRemote = Array.isArray(sessions) && sessions.some((session) => session.status !== 'paused');
+    const dropHint = dropZone.querySelector('.hint');
+    if (dropHint && hasRemote) {
+      dropHint.textContent = 'выберите тот же файл, чтобы продолжить загрузку с сервера';
     }
   } catch (_err) {
     // ignore restore errors on load
