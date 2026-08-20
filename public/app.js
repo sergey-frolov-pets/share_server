@@ -62,6 +62,7 @@ const updateError = document.getElementById('update-error');
 const updateSuccess = document.getElementById('update-success');
 const uploadQueueEl = document.getElementById('upload-queue');
 const uploadQueueList = document.getElementById('upload-queue-list');
+const uploadQueueResumeHint = document.getElementById('upload-queue-resume-hint');
 const queuePauseBtn = document.getElementById('queue-pause-btn');
 const queueResumeBtn = document.getElementById('queue-resume-btn');
 const queueClearBtn = document.getElementById('queue-clear-btn');
@@ -401,15 +402,31 @@ function isUploadQueueProgressOnlyUpdate(prev, state) {
   });
 }
 
+function updateUploadQueueResumeHint(state) {
+  if (!uploadQueueResumeHint) return;
+  const needsReselect = state.items.some((item) => (
+    item.sessionId && !item.file && ['remote', 'paused'].includes(item.status)
+  ));
+  const isUploading = state.items.some((item) => item.status === 'uploading');
+  if (needsReselect && !isUploading) {
+    uploadQueueResumeHint.textContent = 'Сейчас загрузка не идёт — скорость появится, когда выберете те же файлы в зоне выше.';
+    show(uploadQueueResumeHint);
+  } else {
+    hide(uploadQueueResumeHint);
+  }
+}
+
 function renderUploadQueue(state) {
   if (!state.items.length) {
     hide(uploadQueueEl);
+    hide(uploadQueueResumeHint);
     uploadQueueList.innerHTML = '';
     lastUploadQueueSnapshot = null;
     return;
   }
 
   show(uploadQueueEl);
+  updateUploadQueueResumeHint(state);
 
   if (isUploadQueueProgressOnlyUpdate(lastUploadQueueSnapshot, state)) {
     state.items.forEach((item) => {
@@ -507,7 +524,7 @@ async function restoreActiveUploads() {
     const hasRemote = Array.isArray(sessions) && sessions.some((session) => session.status !== 'paused');
     const dropHint = dropZone.querySelector('.hint');
     if (dropHint && hasRemote) {
-      dropHint.textContent = 'выберите тот же файл, чтобы продолжить загрузку с сервера';
+      dropHint.textContent = 'выберите те же файлы — тогда начнётся загрузка и появится скорость';
     }
   } catch (_err) {
     // ignore restore errors on load
