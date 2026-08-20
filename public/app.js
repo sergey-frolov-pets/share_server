@@ -431,13 +431,7 @@ function updateUploadQueueResumeHint(state, restoreState = lastFileRestoreState)
   show(uploadQueueResumeHint);
 
   if (restoreState?.pendingPermission > 0) {
-    uploadQueueResumeText.textContent = 'Файлы сохранены в браузере. Нажмите «Возобновить загрузку», чтобы продолжить после обновления страницы.';
-    if (uploadQueueResumeBtn) show(uploadQueueResumeBtn);
-    return;
-  }
-
-  if (restoreState?.pendingPermission > 0) {
-    uploadQueueResumeText.textContent = 'Нажмите «Возобновить» или «Выбрать файл» у нужной строки в очереди.';
+    uploadQueueResumeText.textContent = 'Файлы сохранены в браузере. Нажмите «Возобновить загрузку» или «Выбрать файл» у нужной строки.';
     if (uploadQueueResumeBtn) show(uploadQueueResumeBtn);
     return;
   }
@@ -538,15 +532,24 @@ async function pickFileForUpload(targetItemId = null) {
         await ingestFileForUpload(file, handle, targetItemId);
         return;
       } catch (err) {
-        if (err?.name === 'AbortError') return;
+        if (err?.name === 'AbortError') {
+          pickTargetQueueId = null;
+          return;
+        }
       }
     }
 
+    const onWindowFocus = () => {
+      window.removeEventListener('focus', onWindowFocus);
+      setTimeout(() => {
+        if (!fileInput.files?.length) {
+          pickTargetQueueId = null;
+        }
+      }, 300);
+    };
+    window.addEventListener('focus', onWindowFocus);
     fileInput.click();
   } finally {
-    if (!fileInput.files?.length) {
-      pickTargetQueueId = null;
-    }
     pickingFiles = false;
   }
 }
@@ -1026,8 +1029,10 @@ dropZone.addEventListener('drop', (e) => {
 
 fileInput.addEventListener('change', () => {
   const file = fileInput.files?.[0];
+  const queueId = pickTargetQueueId;
+  pickTargetQueueId = null;
   if (file) {
-    ingestFileForUpload(file, null, pickTargetQueueId).catch(() => {});
+    ingestFileForUpload(file, null, queueId).catch(() => {});
   }
   fileInput.value = '';
 });
