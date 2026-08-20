@@ -12,6 +12,10 @@ const adminPanel = document.getElementById('admin-panel');
 const adminStats = document.getElementById('admin-stats');
 const adminUsersBody = document.getElementById('admin-users-body');
 const adminError = document.getElementById('admin-error');
+const storageLimitForm = document.getElementById('storage-limit-form');
+const storageUsage = document.getElementById('storage-usage');
+const globalMaxStorageMb = document.getElementById('global-max-storage-mb');
+const storageLimitSuccess = document.getElementById('storage-limit-success');
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const fileInfo = document.getElementById('file-info');
@@ -255,12 +259,17 @@ async function loadAdminPanel() {
   setMessage(adminError, null);
   try {
     const stats = await api('/api/admin/stats');
+    storageUsage.textContent = stats.maxStorageMb
+      ? `Использовано: ${stats.storageMb} МБ из ${stats.maxStorageMb} МБ (свободно ${stats.storageFreeMb} МБ)`
+      : `Использовано: ${stats.storageMb} МБ (лимит не задан)`;
+    globalMaxStorageMb.value = stats.maxStorageMb ?? '';
+
     adminStats.innerHTML = [
       { label: 'Пользователи', value: stats.users },
       { label: 'С загрузкой', value: stats.uploaders },
       { label: 'Ссылки', value: stats.links },
       { label: 'Файлы', value: stats.files },
-      { label: 'Объём, МБ', value: stats.storageMb },
+      { label: 'Диск, МБ', value: stats.maxStorageMb ? `${stats.storageMb}/${stats.maxStorageMb}` : stats.storageMb },
       { label: 'Скачивания (ссылки)', value: stats.linkDownloads },
     ].map((s) => `<div class="stat-card"><strong>${s.value}</strong><span>${s.label}</span></div>`).join('');
 
@@ -322,6 +331,22 @@ async function saveUserRow(e) {
 tabCreate.addEventListener('click', () => switchTab('create'));
 tabManage.addEventListener('click', () => switchTab('manage'));
 tabAdmin.addEventListener('click', () => switchTab('admin'));
+
+storageLimitForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  setMessage(storageLimitSuccess, null);
+  setMessage(adminError, null);
+  try {
+    await api('/api/admin/storage', {
+      method: 'PUT',
+      body: JSON.stringify({ maxStorageMb: globalMaxStorageMb.value }),
+    });
+    setMessage(storageLimitSuccess, 'Лимит диска сохранён', 'success');
+    await loadAdminPanel();
+  } catch (err) {
+    setMessage(adminError, err.message, 'error');
+  }
+});
 
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => {

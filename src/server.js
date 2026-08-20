@@ -30,6 +30,7 @@ const {
   handleAdminStats,
   handleAdminUsers,
   handleAdminUpdateUser,
+  handleAdminStorageSettings,
 } = require('./admin');
 const {
   handleCreateShare,
@@ -37,6 +38,7 @@ const {
   handleUpdateShare,
 } = require('./share');
 const { assertUserCanUpload } = require('./uploadQuota');
+const { checkGlobalStorageQuota } = require('./db');
 const {
   handleRegister,
   handleChangePassword,
@@ -157,6 +159,13 @@ app.post('/api/upload-temp', requireAdminAuth, (req, res) => {
       return;
     }
 
+    const globalQuota = checkGlobalStorageQuota(req.file.size);
+    if (globalQuota.error) {
+      removeFileFromDisk(req.file.path);
+      res.status(403).json({ error: globalQuota.error });
+      return;
+    }
+
     const uploadId = req.file.filename.split('__')[0];
     createTempUpload({
       id: uploadId,
@@ -186,6 +195,7 @@ app.put('/api/share/:shortName', requireAdminAuth, (req, res) => {
 app.get('/api/admin/stats', requireAdminAuth, handleAdminStats);
 app.get('/api/admin/users', requireAdminAuth, handleAdminUsers);
 app.put('/api/admin/users/:id', requireAdminAuth, handleAdminUpdateUser);
+app.put('/api/admin/storage', requireAdminAuth, handleAdminStorageSettings);
 
 app.get('/api/user/upload-quota', requireUserAuth, (req, res) => {
   const user = require('./db').getFullUserById(req.session.userId);
@@ -237,6 +247,13 @@ app.post('/api/user/upload-temp', requireUserAuth, (req, res) => {
     if (quota.error) {
       removeFileFromDisk(req.file.path);
       res.status(403).json({ error: quota.error });
+      return;
+    }
+
+    const globalQuota = checkGlobalStorageQuota(req.file.size);
+    if (globalQuota.error) {
+      removeFileFromDisk(req.file.path);
+      res.status(403).json({ error: globalQuota.error });
       return;
     }
 

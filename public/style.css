@@ -356,6 +356,11 @@ button[type="submit"]:disabled {
   cursor: pointer;
 }
 
-.btn-small:hover {
-  background: var(--accent-hover);
+.storage-limit-form {
+  margin-bottom: 16px;
+}
+
+.storage-limit-form .btn-small {
+  width: auto;
+  margin-top: 8px;
 }

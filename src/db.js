@@ -149,6 +149,62 @@ function migrateOwnershipAndUploadColumns() {
 
 migrateOwnershipAndUploadColumns();
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`);
+
+const GLOBAL_MAX_STORAGE_KEY = 'global_max_storage_bytes';
+
+function getGlobalMaxStorageBytes() {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(GLOBAL_MAX_STORAGE_KEY);
+  if (!row || row.value === '') return null;
+  const num = parseInt(row.value, 10);
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+function setGlobalMaxStorageBytes(bytes) {
+  const value = bytes === null || bytes === undefined ? '' : String(bytes);
+  db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(GLOBAL_MAX_STORAGE_KEY, value);
+}
+
+function getTotalDiskUsageBytes() {
+  const row = db.prepare(`
+    SELECT
+      (SELECT COALESCE(SUM(file_size_bytes), 0) FROM stored_files) +
+      (SELECT COALESCE(SUM(file_size), 0) FROM temp_uploads) AS total
+  `).get();
+  return row?.total || 0;
+}
+
+function checkGlobalStorageQuota(additionalBytes) {
+  const maxBytes = getGlobalMaxStorageBytes();
+  const usedBytes = getTotalDiskUsageBytes();
+  const additional = additionalBytes || 0;
+
+  if (!maxBytes) {
+    return { ok: true, usedBytes, maxBytes: null };
+  }
+
+  if (usedBytes + additional > maxBytes) {
+    const usedLabel = usedBytes < BYTES_PER_MB
+      ? `${Math.round(usedBytes / 1024)} КБ`
+      : `${bytesToMb(usedBytes)} МБ`;
+    return {
+      error: `Недостаточно места на диске. Лимит: ${bytesToMb(maxBytes)} МБ, использовано: ${usedLabel}`,
+      usedBytes,
+      maxBytes,
+    };
+  }
+
+  return { ok: true, usedBytes, maxBytes };
+}
+
 const BYTES_PER_MB = 1024 * 1024;
 
 function mbToBytes(mb) {
@@ -480,9 +536,8 @@ function getAdminStats() {
   ).get().count;
   const links = db.prepare('SELECT COUNT(*) AS count FROM links').get().count;
   const files = db.prepare('SELECT COUNT(*) AS count FROM stored_files').get().count;
-  const storageBytes = db.prepare(
-    'SELECT COALESCE(SUM(file_size_bytes), 0) AS total FROM stored_files'
-  ).get().total;
+  const storageBytes = getTotalDiskUsageBytes();
+  const maxStorageBytes = getGlobalMaxStorageBytes();
   const linkDownloads = db.prepare(
     'SELECT COALESCE(SUM(link_download_count), 0) AS total FROM links'
   ).get().total;
@@ -497,6 +552,9 @@ function getAdminStats() {
     files,
     storageBytes,
     storageMb: bytesToMb(storageBytes),
+    maxStorageBytes,
+    maxStorageMb: bytesToMb(maxStorageBytes),
+    storageFreeMb: maxStorageBytes ? bytesToMb(maxStorageBytes - storageBytes) : null,
     linkDownloads,
     fileDownloads,
   };
@@ -579,4 +637,8 @@ module.exports = {
   getAllUsersWithStats,
   updateUserUploadSettings,
   getAdminStats,
+  getGlobalMaxStorageBytes,
+  setGlobalMaxStorageBytes,
+  getTotalDiskUsageBytes,
+  checkGlobalStorageQuota,
 };

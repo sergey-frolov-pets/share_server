@@ -5,6 +5,7 @@ const {
   getFullUserById,
   mbToBytes,
   bytesToMb,
+  setGlobalMaxStorageBytes,
 } = require('./db');
 const { daysToDatetime } = require('./limits');
 
@@ -93,8 +94,29 @@ function handleAdminUpdateUser(req, res) {
   res.json({ ok: true, user: mapUserRow(updated) });
 }
 
+function handleAdminStorageSettings(req, res) {
+  const body = req.body || {};
+  const maxStorageMb = body.maxStorageMb;
+
+  if (maxStorageMb === '' || maxStorageMb === null || maxStorageMb === undefined) {
+    setGlobalMaxStorageBytes(null);
+    res.json({ ok: true, maxStorageMb: null });
+    return;
+  }
+
+  const maxBytes = mbToBytes(maxStorageMb);
+  if (!maxBytes) {
+    res.status(400).json({ error: 'Лимит диска — целое число МБ ≥ 1 или пусто (без лимита)' });
+    return;
+  }
+
+  setGlobalMaxStorageBytes(maxBytes);
+  res.json({ ok: true, maxStorageMb: bytesToMb(maxBytes) });
+}
+
 module.exports = {
   handleAdminStats,
   handleAdminUsers,
   handleAdminUpdateUser,
+  handleAdminStorageSettings,
 };

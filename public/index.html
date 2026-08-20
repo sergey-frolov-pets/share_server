@@ -194,6 +194,18 @@
     </div>
 
     <div id="admin-panel" class="hidden">
+      <form id="storage-limit-form" class="share-form storage-limit-form">
+        <fieldset class="fieldset">
+          <legend>Диск для обмена</legend>
+          <p id="storage-usage" class="hint"></p>
+          <label>
+            Макс. объём на диске (МБ)
+            <input type="number" id="global-max-storage-mb" min="1" placeholder="без лимита">
+          </label>
+          <button type="submit" class="btn-small">Сохранить лимит</button>
+          <p id="storage-limit-success" class="success hidden"></p>
+        </fieldset>
+      </form>
       <div id="admin-stats" class="stats-grid"></div>
       <h2 class="section-title">Пользователи</h2>
       <div id="admin-users-wrap" class="table-wrap">
