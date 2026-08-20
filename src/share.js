@@ -19,6 +19,7 @@ const { removeFileFromDisk } = require('./cleanup');
 const { hashSecret } = require('./password');
 const { parseAccessInput, parseDomainInput } = require('./access');
 const { parseLimitFields } = require('./limits');
+const { assertUserCanUpload, assertTempOwnedByUser } = require('./uploadQuota');
 
 function parseShareLimits(body) {
   const linkLimits = parseLimitFields(body, 'link');
@@ -58,6 +59,14 @@ function finalizeTempUpload(temp, shortNamePrefix) {
     return { error: 'Не удалось сохранить файл' };
   }
   return { finalPath, originalName: temp.original_name };
+}
+
+function getFileSizeBytes(filePath, fallbackSize) {
+  try {
+    return fs.statSync(filePath).size;
+  } catch {
+    return fallbackSize || 0;
+  }
 }
 
 function cleanupOrphanStoredFile(storedFileId, excludeLinkId) {
@@ -117,6 +126,20 @@ function handleCreateShare(req, res, validateShortName) {
     return;
   }
 
+  const ownerUserId = req.shareOwnerUserId || null;
+  if (ownerUserId) {
+    const owned = assertTempOwnedByUser(temp, ownerUserId);
+    if (owned.error) {
+      res.status(400).json({ error: owned.error });
+      return;
+    }
+    const quota = assertUserCanUpload(ownerUserId, temp.file_size || 0);
+    if (quota.error) {
+      res.status(403).json({ error: quota.error });
+      return;
+    }
+  }
+
   const passwordParsed = parseDownloadPassword(downloadPassword);
   if (passwordParsed.error) {
     res.status(400).json({ error: passwordParsed.error });
@@ -131,6 +154,7 @@ function handleCreateShare(req, res, validateShortName) {
   }
 
   const { linkLimits, fileLimits } = limitsParsed;
+  const fileSizeBytes = getFileSizeBytes(finalized.finalPath, temp.file_size);
 
   try {
     const storedFileId = createStoredFile({
@@ -138,6 +162,8 @@ function handleCreateShare(req, res, validateShortName) {
       originalName: finalized.originalName,
       deleteMaxDownloads: fileLimits.maxDownloads,
       deleteAt: fileLimits.expiresAt,
+      ownerUserId,
+      fileSizeBytes,
     });
 
     createLink({
@@ -148,6 +174,7 @@ function handleCreateShare(req, res, validateShortName) {
       downloadPasswordHash: passwordParsed.hash,
       allowedEmails: JSON.stringify(access.emails),
       allowedDomains: JSON.stringify(access.domains),
+      ownerUserId,
     });
 
     deleteTempUpload(uploadId);
@@ -247,6 +274,8 @@ function handleUpdateShare(req, res, validateShortName) {
       originalName: finalized.originalName,
       deleteMaxDownloads: fileLimits.maxDownloads,
       deleteAt: fileLimits.expiresAt,
+      ownerUserId: row.owner_user_id || null,
+      fileSizeBytes: getFileSizeBytes(finalized.finalPath, temp.file_size),
     });
 
     storedFileId = newStoredId;

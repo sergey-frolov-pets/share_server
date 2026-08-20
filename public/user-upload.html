@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мои файлы</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <section id="gate-card" class="card">
+      <h1>Мои файлы</h1>
+      <p id="gate-message" class="hint">Войдите в аккаунт</p>
+      <p><a href="/account.html">Аккаунт</a></p>
+    </section>
+
+    <section id="upload-card" class="card hidden">
+      <header class="header">
+        <h1>Новая ссылка</h1>
+        <a href="/account.html" class="link-btn">Аккаунт</a>
+      </header>
+      <p id="quota-info" class="hint"></p>
+
+      <div id="user-drop-zone" class="drop-zone">
+        <p>Перетащите файл сюда</p>
+        <input type="file" id="user-file-input" hidden>
+      </div>
+
+      <div id="user-file-info" class="file-info hidden">
+        <span id="user-file-name"></span>
+        <span id="user-upload-status" class="status"></span>
+      </div>
+
+      <form id="user-share-form" class="share-form hidden">
+        <label>
+          Короткое имя
+          <input type="text" id="user-short-name" required pattern="[A-Za-z0-9_-]+">
+          <span id="user-name-error" class="error hidden"></span>
+        </label>
+
+        <fieldset class="fieldset">
+          <legend>Ссылка</legend>
+          <div class="row">
+            <label>Макс. скачиваний<input type="number" id="user-link-max" min="1" placeholder="∞"></label>
+            <label>Срок, дней<input type="number" id="user-link-days" min="1" placeholder="∞"></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>Удаление файла</legend>
+          <div class="row">
+            <label>Макс. скачиваний<input type="number" id="user-file-max" min="1" placeholder="∞"></label>
+            <label>Через, дней<input type="number" id="user-file-days" min="1" placeholder="∞"></label>
+          </div>
+        </fieldset>
+
+        <label>
+          Пароль скачивания
+          <input type="password" id="user-download-password" placeholder="не задан">
+        </label>
+
+        <button type="submit">Создать ссылку</button>
+        <p id="user-share-error" class="error hidden"></p>
+      </form>
+
+      <div id="user-result" class="result hidden">
+        <p>Ссылка:</p>
+        <a id="user-share-link" href="#" target="_blank" rel="noopener"></a>
+      </div>
+    </section>
+  </main>
+  <script src="/user-upload.js"></script>
+</body>
+</html>

@@ -27,10 +27,16 @@ const {
 } = require('./auth');
 const { startCleanupScheduler, removeFileFromDisk } = require('./cleanup');
 const {
+  handleAdminStats,
+  handleAdminUsers,
+  handleAdminUpdateUser,
+} = require('./admin');
+const {
   handleCreateShare,
   handleGetShare,
   handleUpdateShare,
 } = require('./share');
+const { assertUserCanUpload } = require('./uploadQuota');
 const {
   handleRegister,
   handleChangePassword,
@@ -105,14 +111,6 @@ function validateShortName(shortName) {
   return null;
 }
 
-function parsePositiveInt(value, fieldName) {
-  const num = parseInt(value, 10);
-  if (!Number.isFinite(num) || num < 1) {
-    return { error: `${fieldName} должно быть целым числом ≥ 1` };
-  }
-  return { value: num };
-}
-
 app.post('/api/login', handleAdminLogin);
 app.post('/api/logout', handleAdminLogout);
 app.get('/api/me', handleAdminMe);
@@ -164,6 +162,8 @@ app.post('/api/upload-temp', requireAdminAuth, (req, res) => {
       id: uploadId,
       originalName: req.file.originalname,
       storedPath: req.file.path,
+      ownerUserId: null,
+      fileSize: req.file.size,
     });
 
     res.json({
@@ -181,6 +181,85 @@ app.post('/api/share', requireAdminAuth, (req, res) => {
 app.get('/api/share/:shortName', requireAdminAuth, handleGetShare);
 app.put('/api/share/:shortName', requireAdminAuth, (req, res) => {
   handleUpdateShare(req, res, validateShortName);
+});
+
+app.get('/api/admin/stats', requireAdminAuth, handleAdminStats);
+app.get('/api/admin/users', requireAdminAuth, handleAdminUsers);
+app.put('/api/admin/users/:id', requireAdminAuth, handleAdminUpdateUser);
+
+app.get('/api/user/upload-quota', requireUserAuth, (req, res) => {
+  const user = require('./db').getFullUserById(req.session.userId);
+  if (!user) {
+    res.status(404).json({ error: 'Пользователь не найден' });
+    return;
+  }
+  const { formatUserUploadInfo } = require('./uploadQuota');
+  res.json(formatUserUploadInfo(user));
+});
+
+app.get('/api/user/check-name/:name', requireUserAuth, (req, res) => {
+  const error = validateShortName(req.params.name);
+  if (error) {
+    res.json({ available: false, error });
+    return;
+  }
+  const trimmed = req.params.name.trim();
+  if (isShortNameTaken(trimmed)) {
+    res.json({ available: false, error: 'Такое имя уже занято' });
+    return;
+  }
+  res.json({ available: true });
+});
+
+app.post('/api/user/upload-temp', requireUserAuth, (req, res) => {
+  const precheck = assertUserCanUpload(req.session.userId, 0);
+  if (!precheck.user) {
+    res.status(403).json({ error: precheck.error || 'Загрузка не разрешена' });
+    return;
+  }
+
+  uploadTemp.single('file')(req, res, (err) => {
+    if (err) {
+      const message =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? `Файл слишком большой (макс. ${config.maxFileSizeBytes / (1024 * 1024)} МБ)`
+          : err.message || 'Ошибка загрузки';
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ error: 'Файл не передан' });
+      return;
+    }
+
+    const quota = assertUserCanUpload(req.session.userId, req.file.size);
+    if (quota.error) {
+      removeFileFromDisk(req.file.path);
+      res.status(403).json({ error: quota.error });
+      return;
+    }
+
+    const uploadId = req.file.filename.split('__')[0];
+    createTempUpload({
+      id: uploadId,
+      originalName: req.file.originalname,
+      storedPath: req.file.path,
+      ownerUserId: req.session.userId,
+      fileSize: req.file.size,
+    });
+
+    res.json({
+      uploadId,
+      originalName: req.file.originalname,
+      size: req.file.size,
+    });
+  });
+});
+
+app.post('/api/user/share', requireUserAuth, (req, res) => {
+  req.shareOwnerUserId = req.session.userId;
+  handleCreateShare(req, res, validateShortName);
 });
 
 app.get('/api/file/:name', handleFileInfo);

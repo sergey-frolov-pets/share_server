@@ -282,3 +282,80 @@ button[type="submit"]:disabled {
   width: auto;
   margin: 0;
 }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.stat-card strong {
+  display: block;
+  font-size: 1.25rem;
+}
+
+.stat-card span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.section-title {
+  font-size: 1rem;
+  margin: 0 0 12px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 6px;
+  vertical-align: top;
+}
+
+.data-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.user-limits {
+  display: grid;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.user-limits input[type="number"] {
+  margin-top: 0;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
+.btn-small {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.btn-small:hover {
+  background: var(--accent-hover);
+}

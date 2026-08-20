@@ -5,8 +5,13 @@ const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
 const tabCreate = document.getElementById('tab-create');
 const tabManage = document.getElementById('tab-manage');
+const tabAdmin = document.getElementById('tab-admin');
 const createPanel = document.getElementById('create-panel');
 const managePanel = document.getElementById('manage-panel');
+const adminPanel = document.getElementById('admin-panel');
+const adminStats = document.getElementById('admin-stats');
+const adminUsersBody = document.getElementById('admin-users-body');
+const adminError = document.getElementById('admin-error');
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const fileInfo = document.getElementById('file-info');
@@ -231,19 +236,92 @@ function handleFile(file, isUpdate = false) {
   startUpload(file, isUpdate);
 }
 
-tabCreate.addEventListener('click', () => {
-  tabCreate.classList.add('active');
-  tabManage.classList.remove('active');
-  show(createPanel);
-  hide(managePanel);
-});
-
-tabManage.addEventListener('click', () => {
-  tabManage.classList.add('active');
-  tabCreate.classList.remove('active');
+function switchTab(active) {
+  tabCreate.classList.toggle('active', active === 'create');
+  tabManage.classList.toggle('active', active === 'manage');
+  tabAdmin.classList.toggle('active', active === 'admin');
   hide(createPanel);
-  show(managePanel);
-});
+  hide(managePanel);
+  hide(adminPanel);
+  if (active === 'create') show(createPanel);
+  if (active === 'manage') show(managePanel);
+  if (active === 'admin') {
+    show(adminPanel);
+    loadAdminPanel();
+  }
+}
+
+async function loadAdminPanel() {
+  setMessage(adminError, null);
+  try {
+    const stats = await api('/api/admin/stats');
+    adminStats.innerHTML = [
+      { label: 'Пользователи', value: stats.users },
+      { label: 'С загрузкой', value: stats.uploaders },
+      { label: 'Ссылки', value: stats.links },
+      { label: 'Файлы', value: stats.files },
+      { label: 'Объём, МБ', value: stats.storageMb },
+      { label: 'Скачивания (ссылки)', value: stats.linkDownloads },
+    ].map((s) => `<div class="stat-card"><strong>${s.value}</strong><span>${s.label}</span></div>`).join('');
+
+    const { users } = await api('/api/admin/users');
+    adminUsersBody.innerHTML = users.map((u) => `
+      <tr data-user-id="${u.id}">
+        <td>${u.email}</td>
+        <td>${u.fileCount}</td>
+        <td>${u.linkCount}</td>
+        <td>${u.storageMb ?? 0}</td>
+        <td>
+          <label class="checkbox-label">
+            <input type="checkbox" class="user-can-upload" ${u.canUpload ? 'checked' : ''}>
+            Разрешить
+          </label>
+        </td>
+        <td>
+          <div class="user-limits">
+            <input type="number" class="user-max-file" min="1" placeholder="МБ файл" value="${u.maxFileSizeMb ?? ''}">
+            <input type="number" class="user-max-total" min="1" placeholder="МБ всего" value="${u.maxTotalSizeMb ?? ''}">
+            <input type="number" class="user-max-files" min="1" placeholder="файлов" value="${u.maxFiles ?? ''}">
+            <input type="number" class="user-valid-days" min="1" placeholder="дней" value="">
+          </div>
+        </td>
+        <td><button type="button" class="btn-small user-save">Сохранить</button></td>
+      </tr>
+    `).join('');
+
+    adminUsersBody.querySelectorAll('.user-save').forEach((btn) => {
+      btn.addEventListener('click', saveUserRow);
+    });
+  } catch (err) {
+    setMessage(adminError, err.message, 'error');
+  }
+}
+
+async function saveUserRow(e) {
+  const row = e.target.closest('tr');
+  const userId = row.dataset.userId;
+  const canUpload = row.querySelector('.user-can-upload').checked;
+
+  try {
+    await api(`/api/admin/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        canUpload,
+        maxFileSizeMb: row.querySelector('.user-max-file').value,
+        maxTotalSizeMb: row.querySelector('.user-max-total').value,
+        maxFiles: row.querySelector('.user-max-files').value,
+        uploadValidDays: row.querySelector('.user-valid-days').value,
+      }),
+    });
+    await loadAdminPanel();
+  } catch (err) {
+    setMessage(adminError, err.message, 'error');
+  }
+}
+
+tabCreate.addEventListener('click', () => switchTab('create'));
+tabManage.addEventListener('click', () => switchTab('manage'));
+tabAdmin.addEventListener('click', () => switchTab('admin'));
 
 dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', (e) => {
@@ -461,10 +539,7 @@ function showUpload() {
   resetCreateState();
   resetManageState();
   show(dropZone);
-  show(createPanel);
-  hide(managePanel);
-  tabCreate.classList.add('active');
-  tabManage.classList.remove('active');
+  switchTab('create');
 }
 
 async function init() {

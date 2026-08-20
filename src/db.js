@@ -107,6 +107,120 @@ function migrateLegacyFilesTable() {
 
 migrateLegacyFilesTable();
 
+function migrateOwnershipAndUploadColumns() {
+  const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+  if (!userCols.includes('can_upload')) {
+    db.exec('ALTER TABLE users ADD COLUMN can_upload INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!userCols.includes('upload_max_file_size_bytes')) {
+    db.exec('ALTER TABLE users ADD COLUMN upload_max_file_size_bytes INTEGER');
+  }
+  if (!userCols.includes('upload_max_total_bytes')) {
+    db.exec('ALTER TABLE users ADD COLUMN upload_max_total_bytes INTEGER');
+  }
+  if (!userCols.includes('upload_max_files')) {
+    db.exec('ALTER TABLE users ADD COLUMN upload_max_files INTEGER');
+  }
+  if (!userCols.includes('upload_expires_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN upload_expires_at TEXT');
+  }
+
+  const fileCols = db.prepare('PRAGMA table_info(stored_files)').all().map((c) => c.name);
+  if (!fileCols.includes('owner_user_id')) {
+    db.exec('ALTER TABLE stored_files ADD COLUMN owner_user_id INTEGER');
+  }
+  if (!fileCols.includes('file_size_bytes')) {
+    db.exec('ALTER TABLE stored_files ADD COLUMN file_size_bytes INTEGER NOT NULL DEFAULT 0');
+  }
+
+  const linkCols = db.prepare('PRAGMA table_info(links)').all().map((c) => c.name);
+  if (!linkCols.includes('owner_user_id')) {
+    db.exec('ALTER TABLE links ADD COLUMN owner_user_id INTEGER');
+  }
+
+  const tempCols = db.prepare('PRAGMA table_info(temp_uploads)').all().map((c) => c.name);
+  if (!tempCols.includes('owner_user_id')) {
+    db.exec('ALTER TABLE temp_uploads ADD COLUMN owner_user_id INTEGER');
+  }
+  if (!tempCols.includes('file_size')) {
+    db.exec('ALTER TABLE temp_uploads ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+migrateOwnershipAndUploadColumns();
+
+const BYTES_PER_MB = 1024 * 1024;
+
+function mbToBytes(mb) {
+  if (mb === null || mb === undefined || mb === '') return null;
+  const num = Number(mb);
+  if (!Number.isFinite(num) || num < 1) return null;
+  return Math.round(num * BYTES_PER_MB);
+}
+
+function bytesToMb(bytes) {
+  if (bytes === null || bytes === undefined) return null;
+  return Math.round((bytes / BYTES_PER_MB) * 100) / 100;
+}
+
+function isUploadPermissionActive(user) {
+  if (!user?.can_upload) return false;
+  if (user.upload_expires_at && new Date(user.upload_expires_at) <= new Date()) {
+    return false;
+  }
+  return true;
+}
+
+function getUserUploadUsage(userId) {
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS file_count,
+      COALESCE(SUM(file_size_bytes), 0) AS total_bytes
+    FROM stored_files
+    WHERE owner_user_id = ?
+  `).get(userId);
+
+  const linkRow = db.prepare(`
+    SELECT COUNT(*) AS link_count
+    FROM links
+    WHERE owner_user_id = ?
+  `).get(userId);
+
+  return {
+    fileCount: row?.file_count || 0,
+    totalBytes: row?.total_bytes || 0,
+    linkCount: linkRow?.link_count || 0,
+  };
+}
+
+function checkUserUploadQuota(user, additionalFileSizeBytes) {
+  const usage = getUserUploadUsage(user.id);
+  const size = additionalFileSizeBytes || 0;
+
+  if (user.upload_max_file_size_bytes && size > user.upload_max_file_size_bytes) {
+    return {
+      error: `Макс. размер файла: ${bytesToMb(user.upload_max_file_size_bytes)} МБ`,
+      usage,
+    };
+  }
+
+  if (user.upload_max_total_bytes && usage.totalBytes + size > user.upload_max_total_bytes) {
+    return {
+      error: `Лимит общего объёма: ${bytesToMb(user.upload_max_total_bytes)} МБ`,
+      usage,
+    };
+  }
+
+  if (user.upload_max_files && usage.fileCount >= user.upload_max_files) {
+    return {
+      error: `Лимит файлов: ${user.upload_max_files}`,
+      usage,
+    };
+  }
+
+  return { ok: true, usage };
+}
+
 function isShortNameTaken(shortName) {
   const row = db.prepare('SELECT 1 FROM links WHERE short_name = ?').get(shortName);
   return Boolean(row);
@@ -115,9 +229,13 @@ function isShortNameTaken(shortName) {
 function createStoredFile(record) {
   const result = db.prepare(`
     INSERT INTO stored_files (
-      stored_path, original_name, delete_max_downloads, delete_at
+      stored_path, original_name, delete_max_downloads, delete_at,
+      owner_user_id, file_size_bytes
     )
-    VALUES (@storedPath, @originalName, @deleteMaxDownloads, @deleteAt)
+    VALUES (
+      @storedPath, @originalName, @deleteMaxDownloads, @deleteAt,
+      @ownerUserId, @fileSizeBytes
+    )
   `).run(record);
   return result.lastInsertRowid;
 }
@@ -176,11 +294,11 @@ function createLink(record) {
   db.prepare(`
     INSERT INTO links (
       short_name, stored_file_id, link_max_downloads, link_expires_at,
-      download_password_hash, allowed_emails, allowed_domains
+      download_password_hash, allowed_emails, allowed_domains, owner_user_id
     )
     VALUES (
       @shortName, @storedFileId, @linkMaxDownloads, @linkExpiresAt,
-      @downloadPasswordHash, @allowedEmails, @allowedDomains
+      @downloadPasswordHash, @allowedEmails, @allowedDomains, @ownerUserId
     )
   `).run(record);
 }
@@ -201,6 +319,7 @@ function getLinkWithFile(shortName) {
       l.download_password_hash,
       l.allowed_emails,
       l.allowed_domains,
+      l.owner_user_id,
       l.created_at AS link_created_at,
       l.updated_at AS link_updated_at,
       s.id AS stored_file_id,
@@ -268,8 +387,8 @@ function countLinksForStoredFile(storedFileId, excludeLinkId = null) {
 
 function createTempUpload(record) {
   db.prepare(`
-    INSERT INTO temp_uploads (id, original_name, stored_path)
-    VALUES (@id, @originalName, @storedPath)
+    INSERT INTO temp_uploads (id, original_name, stored_path, owner_user_id, file_size)
+    VALUES (@id, @originalName, @storedPath, @ownerUserId, @fileSize)
   `).run(record);
 }
 
@@ -293,7 +412,94 @@ function getUserByEmail(email) {
 }
 
 function getUserById(id) {
-  return db.prepare('SELECT id, email, created_at FROM users WHERE id = ?').get(id);
+  return db.prepare(`
+    SELECT id, email, created_at, can_upload, upload_max_file_size_bytes,
+           upload_max_total_bytes, upload_max_files, upload_expires_at
+    FROM users WHERE id = ?
+  `).get(id);
+}
+
+function getFullUserById(id) {
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+}
+
+function getAllUsersWithStats() {
+  return db.prepare(`
+    SELECT
+      u.id,
+      u.email,
+      u.created_at,
+      u.can_upload,
+      u.upload_max_file_size_bytes,
+      u.upload_max_total_bytes,
+      u.upload_max_files,
+      u.upload_expires_at,
+      COALESCE(fs.file_count, 0) AS file_count,
+      COALESCE(fs.storage_bytes, 0) AS storage_bytes,
+      COALESCE(ls.link_count, 0) AS link_count
+    FROM users u
+    LEFT JOIN (
+      SELECT owner_user_id, COUNT(*) AS file_count, SUM(file_size_bytes) AS storage_bytes
+      FROM stored_files
+      WHERE owner_user_id IS NOT NULL
+      GROUP BY owner_user_id
+    ) fs ON fs.owner_user_id = u.id
+    LEFT JOIN (
+      SELECT owner_user_id, COUNT(*) AS link_count
+      FROM links
+      WHERE owner_user_id IS NOT NULL
+      GROUP BY owner_user_id
+    ) ls ON ls.owner_user_id = u.id
+    ORDER BY u.created_at DESC
+  `).all();
+}
+
+function updateUserUploadSettings(userId, settings) {
+  db.prepare(`
+    UPDATE users SET
+      can_upload = @canUpload,
+      upload_max_file_size_bytes = @maxFileSizeBytes,
+      upload_max_total_bytes = @maxTotalBytes,
+      upload_max_files = @maxFiles,
+      upload_expires_at = @uploadExpiresAt
+    WHERE id = @userId
+  `).run({
+    userId,
+    canUpload: settings.canUpload ? 1 : 0,
+    maxFileSizeBytes: settings.maxFileSizeBytes,
+    maxTotalBytes: settings.maxTotalBytes,
+    maxFiles: settings.maxFiles,
+    uploadExpiresAt: settings.uploadExpiresAt,
+  });
+}
+
+function getAdminStats() {
+  const users = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+  const uploaders = db.prepare(
+    'SELECT COUNT(*) AS count FROM users WHERE can_upload = 1'
+  ).get().count;
+  const links = db.prepare('SELECT COUNT(*) AS count FROM links').get().count;
+  const files = db.prepare('SELECT COUNT(*) AS count FROM stored_files').get().count;
+  const storageBytes = db.prepare(
+    'SELECT COALESCE(SUM(file_size_bytes), 0) AS total FROM stored_files'
+  ).get().total;
+  const linkDownloads = db.prepare(
+    'SELECT COALESCE(SUM(link_download_count), 0) AS total FROM links'
+  ).get().total;
+  const fileDownloads = db.prepare(
+    'SELECT COALESCE(SUM(total_download_count), 0) AS total FROM stored_files'
+  ).get().total;
+
+  return {
+    users,
+    uploaders,
+    links,
+    files,
+    storageBytes,
+    storageMb: bytesToMb(storageBytes),
+    linkDownloads,
+    fileDownloads,
+  };
 }
 
 function createUser(email, passwordHash) {
@@ -364,4 +570,13 @@ module.exports = {
   markTokenUsed,
   deleteExpiredTokens,
   getFileByShortName,
+  mbToBytes,
+  bytesToMb,
+  isUploadPermissionActive,
+  getUserUploadUsage,
+  checkUserUploadQuota,
+  getFullUserById,
+  getAllUsersWithStats,
+  updateUserUploadSettings,
+  getAdminStats,
 };

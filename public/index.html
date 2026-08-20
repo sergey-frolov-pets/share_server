@@ -33,6 +33,7 @@
     <div class="tabs">
       <button type="button" id="tab-create" class="tab active">Новая ссылка</button>
       <button type="button" id="tab-manage" class="tab">Обновить ссылку</button>
+      <button type="button" id="tab-admin" class="tab">Админка</button>
     </div>
 
     <div id="create-panel">
@@ -190,6 +191,28 @@
         <p id="update-error" class="error hidden"></p>
         <p id="update-success" class="success hidden"></p>
       </form>
+    </div>
+
+    <div id="admin-panel" class="hidden">
+      <div id="admin-stats" class="stats-grid"></div>
+      <h2 class="section-title">Пользователи</h2>
+      <div id="admin-users-wrap" class="table-wrap">
+        <table class="data-table" id="admin-users-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Файлы</th>
+              <th>Ссылки</th>
+              <th>Объём</th>
+              <th>Загрузка</th>
+              <th>Лимиты</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="admin-users-body"></tbody>
+        </table>
+      </div>
+      <p id="admin-error" class="error hidden"></p>
     </div>
   </section>
   </main>

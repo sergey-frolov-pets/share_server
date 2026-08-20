@@ -42,15 +42,28 @@ async function api(path, options = {}) {
   return data;
 }
 
+const uploadAccess = document.getElementById('upload-access');
+const uploadAccessInfo = document.getElementById('upload-access-info');
+
 async function loadAccount() {
   const { user } = await api('/api/user/me');
   if (user) {
     hide(loginCard);
     show(accountCard);
     accountEmail.textContent = user.email;
+    if (user.upload?.canUpload) {
+      show(uploadAccess);
+      uploadAccessInfo.textContent = [
+        `Файлов: ${user.upload.usage.fileCount}/${user.upload.maxFiles ?? '∞'}`,
+        `Объём: ${user.upload.usage.totalMb ?? 0} / ${user.upload.maxTotalSizeMb ?? '∞'} МБ`,
+      ].join(' · ');
+    } else {
+      hide(uploadAccess);
+    }
   } else {
     show(loginCard);
     hide(accountCard);
+    hide(uploadAccess);
   }
 }
 

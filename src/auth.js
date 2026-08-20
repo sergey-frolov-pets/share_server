@@ -1,6 +1,7 @@
 const config = require('./config');
 const { getUserById, getUserByEmail } = require('./db');
 const { verifySecret } = require('./password');
+const { formatUserUploadInfo } = require('./uploadQuota');
 
 function requireAdminAuth(req, res, next) {
   if (req.session?.adminAuth) {
@@ -71,7 +72,13 @@ function handleUserMe(req, res) {
     return;
   }
 
-  res.json({ user: { email: user.email } });
+  const fullUser = getUserByEmail(user.email);
+  res.json({
+    user: {
+      email: user.email,
+      upload: formatUserUploadInfo(fullUser),
+    },
+  });
 }
 
 module.exports = {
