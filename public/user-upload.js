@@ -53,6 +53,16 @@ function limitsPayload() {
   };
 }
 
+async function assignDefaultShortName() {
+  try {
+    const data = await api('/api/user/random-name');
+    shortNameInput.value = data.shortName;
+    setMsg(nameError, null);
+  } catch (err) {
+    setMsg(nameError, err.message, 'error');
+  }
+}
+
 async function loadQuota() {
   const quota = await api('/api/user/upload-quota');
   if (!quota.canUpload) {
@@ -79,6 +89,7 @@ function startUpload(file) {
   fileNameEl.textContent = file.name;
   show(fileInfo);
   show(shareForm);
+  assignDefaultShortName();
   uploadStatusEl.textContent = 'Загрузка…';
   uploadStatusEl.className = 'status uploading';
 

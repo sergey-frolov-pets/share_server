@@ -137,6 +137,17 @@ async function checkNameAvailability(name) {
   }
 }
 
+async function assignDefaultShortName() {
+  try {
+    const data = await api('/api/random-name');
+    shortNameInput.value = data.shortName;
+    updateNamePreview();
+    setMessage(nameError, null);
+  } catch (err) {
+    setMessage(nameError, err.message, 'error');
+  }
+}
+
 function buildLimitPayload(linkMax, linkDays, fileMax, fileDays) {
   return {
     linkMaxDownloads: linkMax,
@@ -197,6 +208,7 @@ function startUpload(file, isUpdate = false) {
     fileNameEl.textContent = file.name;
     show(fileInfo);
     show(shareForm);
+    assignDefaultShortName();
     uploadStatusEl.textContent = 'Загрузка…';
     uploadStatusEl.className = 'status uploading';
   }
