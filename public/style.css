@@ -33,6 +33,11 @@ body {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px;
+  overflow: hidden;
+}
+
+#create-panel {
+  min-width: 0;
 }
 
 h1 {
@@ -539,6 +544,8 @@ button[type="submit"]:disabled {
   padding: 12px;
   background: var(--bg);
   border-radius: 8px;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .upload-queue-header {
@@ -547,17 +554,21 @@ button[type="submit"]:disabled {
   align-items: center;
   gap: 12px;
   margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .upload-queue-title {
   margin: 0;
   font-size: 0.95rem;
+  flex: 1;
+  min-width: 0;
 }
 
 .upload-queue-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-shrink: 0;
+  gap: 6px;
 }
 
 .upload-queue-list {
@@ -566,6 +577,7 @@ button[type="submit"]:disabled {
   padding: 0;
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .upload-queue-item {
@@ -573,11 +585,50 @@ button[type="submit"]:disabled {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
+  overflow: hidden;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .upload-queue-item.active {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  background: #f8fbff;
+}
+
+.upload-queue-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.upload-queue-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-queue-item-name {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.upload-queue-item-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.upload-queue-item-status {
+  color: var(--accent);
 }
 
 .upload-queue-item-main {
@@ -586,20 +637,6 @@ button[type="submit"]:disabled {
   gap: 10px;
   font-size: 0.875rem;
   min-width: 0;
-}
-
-.upload-queue-item-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  flex: 1;
-}
-
-.upload-queue-item-status {
-  flex-shrink: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
 }
 
 .upload-queue-item-error {
@@ -628,8 +665,14 @@ button[type="submit"]:disabled {
 
 .upload-queue-item-actions {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-top: 0;
+}
+
+.upload-queue-item-actions .btn-icon {
+  width: 32px;
+  height: 32px;
 }
 
 .admin-file-links {

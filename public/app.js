@@ -233,24 +233,31 @@ function renderDownloadQueue(state) {
   downloadQueueList.innerHTML = state.items.map((item) => {
     const label = DOWNLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
     const activeClass = item.id === state.currentItemId ? ' active' : '';
+    const statusText = item.progress && ['pending', 'downloading', 'paused'].includes(item.status)
+      ? `${label} · ${item.progress}%`
+      : label;
     const progressHtml = ['pending', 'downloading', 'paused'].includes(item.status)
       ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
       : '';
-    const errorHtml = item.error ? `<div class="upload-queue-item-meta">${escapeHtml(item.error)}</div>` : '';
+    const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
+    const cancelBtn = ['pending', 'downloading', 'paused'].includes(item.status)
+      ? AppIcons.iconButton('cancel', { className: 'btn-secondary download-queue-cancel-btn', title: 'Отмена', attrs: `data-download-id="${item.id}"` })
+      : '';
+
     return `
       <li class="upload-queue-item${activeClass}">
-        <div class="upload-queue-item-main">
-          <strong>${escapeHtml(item.name)}</strong>
-          <span>${label}${item.progress ? ` · ${item.progress}%` : ''}</span>
+        <div class="upload-queue-item-row">
+          <div class="upload-queue-item-text">
+            <span class="upload-queue-item-name">${escapeHtml(item.name)}</span>
+            <div class="upload-queue-item-sub">
+              <span class="upload-queue-item-size">${formatUploadBytes(item.size)}</span>
+              <span class="upload-queue-item-status">${statusText}</span>
+            </div>
+          </div>
+          ${cancelBtn ? `<div class="upload-queue-item-actions icon-actions">${cancelBtn}</div>` : ''}
         </div>
-        <div class="upload-queue-item-meta">${formatUploadBytes(item.size)}</div>
         ${progressHtml}
         ${errorHtml}
-        <div class="upload-queue-item-actions icon-actions">
-          ${['pending', 'downloading', 'paused'].includes(item.status)
-            ? AppIcons.iconButton('cancel', { className: 'btn-secondary download-queue-cancel-btn', title: 'Отмена', attrs: `data-download-id="${item.id}"` })
-            : ''}
-        </div>
       </li>
     `;
   }).join('');
@@ -290,19 +297,25 @@ function buildUploadQueueItemHtml(item, currentItemId) {
     ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
     : '';
   const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
+  const actionsHtml = [
+    item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : '',
+    ['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
+  ].filter(Boolean).join('');
+
   return `
     <li class="upload-queue-item${activeClass}" data-queue-id="${item.id}" data-status="${item.status}">
-      <div class="upload-queue-item-main">
-        <strong class="upload-queue-item-name">${escapeHtml(item.name)}</strong>
-        <span class="upload-queue-item-status">${formatQueueItemStatus(item)}</span>
+      <div class="upload-queue-item-row">
+        <div class="upload-queue-item-text">
+          <span class="upload-queue-item-name">${escapeHtml(item.name)}</span>
+          <div class="upload-queue-item-sub">
+            <span class="upload-queue-item-size">${formatUploadBytes(item.size)}</span>
+            <span class="upload-queue-item-status">${formatQueueItemStatus(item)}</span>
+          </div>
+        </div>
+        ${actionsHtml ? `<div class="upload-queue-item-actions icon-actions">${actionsHtml}</div>` : ''}
       </div>
-      <div class="upload-queue-item-meta">${formatUploadBytes(item.size)}</div>
       ${progressHtml}
       ${errorHtml}
-      <div class="upload-queue-item-actions icon-actions">
-        ${item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : ''}
-        ${['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : ''}
-      </div>
     </li>
   `;
 }
