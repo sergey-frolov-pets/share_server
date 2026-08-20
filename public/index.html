@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Share</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+  <section id="login-section" class="card hidden">
+    <h1>Вход</h1>
+    <form id="login-form">
+      <label>
+        Логин
+        <input type="text" id="login-username" autocomplete="username" required>
+      </label>
+      <label>
+        Пароль
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Войти</button>
+      <p id="login-error" class="error hidden"></p>
+    </form>
+  </section>
+
+  <section id="upload-section" class="card hidden">
+    <header class="header">
+      <h1>Загрузка файла</h1>
+      <button type="button" id="logout-btn" class="link-btn">Выйти</button>
+    </header>
+
+    <div id="drop-zone" class="drop-zone">
+      <p>Перетащите файл сюда</p>
+      <p class="hint">или кликните для выбора</p>
+      <input type="file" id="file-input" hidden>
+    </div>
+
+    <div id="file-info" class="file-info hidden">
+      <span id="file-name"></span>
+      <span id="upload-status" class="status"></span>
+    </div>
+
+    <form id="share-form" class="share-form hidden">
+      <label>
+        Короткое имя (часть ссылки)
+        <input type="text" id="short-name" placeholder="my-file" pattern="[A-Za-z0-9_-]+" required>
+        <span id="name-preview" class="hint"></span>
+        <span id="name-error" class="error hidden"></span>
+      </label>
+
+      <div class="row">
+        <label>
+          Скачиваний
+          <input type="number" id="max-downloads" min="1" value="2" required>
+        </label>
+        <label>
+          Дней на сервере
+          <input type="number" id="storage-days" min="1" value="2" required>
+        </label>
+      </div>
+
+      <button type="submit" id="share-btn">Создать ссылку</button>
+      <p id="share-error" class="error hidden"></p>
+    </form>
+
+    <div id="result" class="result hidden">
+      <p>Ссылка готова:</p>
+      <a id="share-link" href="#" target="_blank" rel="noopener"></a>
+      <button type="button" id="new-upload-btn" class="link-btn">Загрузить другой файл</button>
+    </div>
+  </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
