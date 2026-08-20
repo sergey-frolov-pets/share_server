@@ -573,6 +573,17 @@ button[type="submit"]:disabled {
   margin-top: 2px;
 }
 
+.upload-queue-resume-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
 .upload-queue-item-toolbar {
   display: flex;
   flex-wrap: wrap;

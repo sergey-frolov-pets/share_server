@@ -133,7 +133,10 @@
 
     formatItemStatus(item) {
       if (item.status === 'uploading') {
-        return item.progress ? `Загружается · ${item.progress}%` : 'Загружается';
+        const pct = item.progress ? `${item.progress}%` : '0%';
+        const speed = formatTransferSpeed(item.speedBps);
+        if (speed) return `Загружается · ${pct} · ${speed}`;
+        return `Загружается · ${pct}`;
       }
 
       if (item.status === 'pending') {
@@ -146,6 +149,9 @@
       }
 
       if (item.status === 'paused') {
+        const pct = item.progress ? ` · ${item.progress}%` : '';
+        const speed = formatTransferSpeed(item.speedBps);
+        if (speed) return `На паузе${pct} · было ${speed}`;
         return item.progress ? `На паузе · ${item.progress}%` : 'На паузе';
       }
 
@@ -153,10 +159,8 @@
         const waiting = this.getRemoteWaitingItems();
         const waitingIndex = waiting.findIndex((entry) => entry.id === item.id);
         const pct = item.progress ? ` · ${item.progress}%` : '';
-        if (waiting.length > 1 && waitingIndex > 0) {
-          return `Ожидает · ${waitingIndex + 1}/${waiting.length}${pct}`;
-        }
-        return `На сервере${pct} · выберите файл`;
+        const order = waiting.length > 1 ? ` · ${waitingIndex + 1}/${waiting.length}` : '';
+        return `Нужен файл снова${order}${pct}`;
       }
 
       return STATUS_LABELS[item.status] || item.status;
@@ -167,11 +171,6 @@
       if (item.status === 'paused') return { text: 'На паузе', className: 'paused' };
       if (item.status === 'pending') return { text: 'Ожидает', className: 'pending' };
       if (item.status === 'remote') {
-        const waiting = this.getRemoteWaitingItems();
-        const waitingIndex = waiting.findIndex((entry) => entry.id === item.id);
-        if (waiting.length > 1 && waitingIndex > 0) {
-          return { text: 'Ожидает', className: 'pending' };
-        }
         return { text: 'На сервере', className: 'remote' };
       }
       if (item.status === 'ready') return { text: 'Готов', className: 'ready' };
@@ -185,22 +184,31 @@
 
       const received = bytesFromProgress(item);
       const total = item.size;
+
+      if (item.status === 'remote') {
+        return `Сохранено ${formatBytes(received)} / ${formatBytes(total)} · загрузка не идёт — выберите тот же файл`;
+      }
+
       let detail = `${formatBytes(received)} / ${formatBytes(total)}`;
 
       if (item.status === 'uploading') {
         const speed = formatTransferSpeed(item.speedBps);
-        if (speed) detail += ` · ${speed}`;
+        detail += speed ? ` · ${speed}` : ' · …';
       }
 
       const showEta = item.status === 'uploading' && item.etaSeconds != null;
       const eta = showEta ? formatDuration(item.etaSeconds) : null;
       if (eta) {
         detail += ` · осталось ${eta}`;
-      } else if (item.status === 'remote') {
-        detail += ' · нужен тот же файл';
       }
 
       return detail;
+    }
+
+    hasRemoteSessionsWaitingForFile() {
+      return this.items.some((item) => (
+        item.sessionId && !item.file && ['remote', 'paused'].includes(item.status)
+      ));
     }
 
     updateItemTransferStats(item, bytesReceived, totalSize, sampleIntervalSec = null) {
