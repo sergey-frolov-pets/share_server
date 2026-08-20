@@ -266,7 +266,9 @@
 
         const existing = this.items.find((item) => item.sessionId === session.sessionId);
         if (existing) {
-          if (existing.status === 'uploading') continue;
+          if (existing.file || existing.status === 'uploading' || existing.status === 'pending') {
+            continue;
+          }
           const nextStatus = session.status === 'paused' ? 'paused' : 'remote';
           const prevBytes = existing.bytesReceived || 0;
           const nextBytes = session.bytesReceived || 0;
@@ -287,6 +289,14 @@
           }
           continue;
         }
+
+        const inFlight = this.items.some((item) => (
+          item.file
+          && ['pending', 'uploading'].includes(item.status)
+          && item.name === session.originalName
+          && item.size === session.totalSize
+        ));
+        if (inFlight) continue;
 
         this.items.push(sessionToItem(session));
         changed = true;
@@ -309,14 +319,14 @@
 
       if (shouldTick && !this._displayTimer) {
         this._displayTimer = setInterval(() => {
-          let changed = false;
+          let tickChanged = false;
           this.items.forEach((item) => {
             if (item.etaSeconds > 0 && item.status === 'uploading') {
               item.etaSeconds = Math.max(0, item.etaSeconds - DISPLAY_TICK_MS / 1000);
-              changed = true;
+              tickChanged = true;
             }
           });
-          if (changed) this.notify(false);
+          if (tickChanged) this.notify(false);
         }, DISPLAY_TICK_MS);
       } else if (!shouldTick && this._displayTimer) {
         clearInterval(this._displayTimer);
@@ -357,11 +367,10 @@
       if (!match) return false;
 
       match.file = file;
-      match.status = 'pending';
       match.error = null;
       sessionStorage.setItem(storageKey(this.apiPrefix, file), match.sessionId);
       this.notify();
-      this.start();
+      this.startItemUpload(match);
       return true;
     }
 
@@ -440,6 +449,22 @@
         return;
       }
 
+      if (item.sessionId && item.file && ['remote', 'paused'].includes(item.status)) {
+        item.status = 'paused';
+        item.serverStatus = 'paused';
+        const uploader = this.uploaders.get(id);
+        if (uploader) {
+          uploader.pause().catch(() => {});
+        } else {
+          this.fetchFn(`${this.apiPrefix}/pause/${item.sessionId}`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+          }).catch(() => {});
+        }
+        this.notify();
+        return;
+      }
+
       if (item.sessionId && item.status === 'remote' && !item.file) {
         this.fetchFn(`${this.apiPrefix}/pause/${item.sessionId}`, {
           method: 'POST',
@@ -463,7 +488,34 @@
         item.status = 'uploading';
         item.serverStatus = 'active';
         if (uploader.waitingForResume) {
-          uploader.resumeUpload().catch(() => {});
+          uploader.resumeUpload()
+            .then((result) => {
+              if (result?.uploadId) {
+                item.uploadId = result.uploadId;
+                item.sessionId = null;
+                item.serverStatus = null;
+                item.status = 'ready';
+                item.progress = 100;
+                item.bytesReceived = item.size;
+                item.etaSeconds = 0;
+                item.speedBps = null;
+                this.onActiveItem(item);
+              }
+            })
+            .catch((error) => {
+              if (!uploader.cancelled) {
+                item.status = 'paused';
+                item.serverStatus = 'paused';
+                item.error = error.message;
+              }
+            })
+            .finally(() => {
+              if (!uploader.paused && !uploader.waitingForResume) {
+                this.uploaders.delete(id);
+              }
+              this.notify();
+              this.start();
+            });
         } else {
           uploader.unpause().catch(() => {});
         }
@@ -483,6 +535,10 @@
       }
 
       if (item.file) {
+        if (item.status === 'remote') {
+          this.startItemUpload(item);
+          return;
+        }
         item.status = 'pending';
         this.notify();
         this.start();
@@ -555,11 +611,21 @@
       while (this.getActiveUploadCount() < this.maxConcurrent) {
         const next = this.items.find((item) => item.status === 'pending' && item.file);
         if (!next) break;
+        if (this.uploaders.has(next.id)) break;
         this.startItemUpload(next);
       }
     }
 
-    startItemUpload(item) {
+    async startItemUpload(item) {
+      if (!item?.file || this.uploaders.has(item.id)) return;
+      if (item.status === 'uploading') return;
+
+      if (this.getActiveUploadCount() >= this.maxConcurrent) {
+        item.status = 'pending';
+        this.notify();
+        return;
+      }
+
       item.status = 'uploading';
       item.error = null;
       item.speedBps = null;
@@ -581,6 +647,9 @@
 
       uploader.setHandlers({
         onProgress: ({ bytesReceived, totalSize }) => {
+          if (uploader.session?.sessionId) {
+            item.sessionId = uploader.session.sessionId;
+          }
           this.updateItemTransferStats(item, bytesReceived, totalSize);
           item.serverStatus = 'active';
           this.notify(false);
@@ -588,48 +657,44 @@
         onStatus: () => {},
       });
 
-      uploader.upload(item.file)
-        .then((result) => {
-          this.uploaders.delete(item.id);
-          if (result?.uploadId) {
-            item.uploadId = result.uploadId;
-            item.sessionId = null;
-            item.serverStatus = null;
-            item.status = 'ready';
-            item.progress = 100;
-            item.bytesReceived = item.size;
-            item.etaSeconds = 0;
-            this.onActiveItem(item);
-          } else if (uploader.waitingForResume || uploader.paused) {
+      try {
+        const result = await uploader.upload(item.file);
+        if (result?.uploadId) {
+          item.uploadId = result.uploadId;
+          item.sessionId = null;
+          item.serverStatus = null;
+          item.status = 'ready';
+          item.progress = 100;
+          item.bytesReceived = item.size;
+          item.etaSeconds = 0;
+          item.speedBps = null;
+          this.onActiveItem(item);
+        } else if (uploader.waitingForResume || uploader.paused) {
+          item.status = 'paused';
+          item.serverStatus = 'paused';
+        } else if (uploader.cancelled) {
+          item.status = 'cancelled';
+        }
+      } catch (error) {
+        if (!uploader.cancelled) {
+          if (uploader.waitingForResume || uploader.paused) {
             item.status = 'paused';
             item.serverStatus = 'paused';
-          } else if (uploader.cancelled) {
-            item.status = 'cancelled';
-            this.uploaders.delete(item.id);
+            item.error = error.message;
+          } else {
+            item.status = 'error';
+            item.error = error.message;
           }
-        })
-        .catch((error) => {
-          if (!uploader.cancelled) {
-            if (uploader.waitingForResume || uploader.paused) {
-              item.status = 'paused';
-              item.serverStatus = 'paused';
-              item.error = error.message;
-            } else {
-              this.uploaders.delete(item.id);
-              item.status = 'error';
-              item.error = error.message;
-            }
-          }
-        })
-        .finally(() => {
-          this.notify();
-          this.updateServerSyncTimer();
-          this.updateDisplayTimer();
-          if (!uploader.paused && !uploader.waitingForResume) {
-            this.uploaders.delete(item.id);
-          }
-          this.start();
-        });
+        }
+      } finally {
+        if (!uploader.paused && !uploader.waitingForResume) {
+          this.uploaders.delete(item.id);
+        }
+        this.notify();
+        this.updateServerSyncTimer();
+        this.updateDisplayTimer();
+        this.start();
+      }
     }
   }
 
