@@ -2,6 +2,7 @@
   const STORAGE_PREFIX = 'shareChunkUpload:';
   const MAX_RETRIES = 5;
   const RETRY_BASE_MS = 2000;
+  const PROGRESS_EMIT_MS = 100;
 
   function storageKey(apiPrefix, file) {
     return `${STORAGE_PREFIX}${apiPrefix}:${file.name}:${file.size}:${file.lastModified}`;
@@ -36,6 +37,8 @@
       this.onStatus = null;
       this.onComplete = null;
       this.onError = null;
+      this._activeXhr = null;
+      this._lastProgressEmit = 0;
     }
 
     setHandlers(handlers) {
@@ -49,7 +52,12 @@
       if (this.onStatus) this.onStatus(text, className);
     }
 
-    emitProgress(percent, bytesReceived, totalSize) {
+    emitProgress(percent, bytesReceived, totalSize, force = false) {
+      const now = Date.now();
+      if (!force && this._lastProgressEmit && now - this._lastProgressEmit < PROGRESS_EMIT_MS) {
+        return;
+      }
+      this._lastProgressEmit = now;
       if (this.onProgress) {
         this.onProgress({ percent, bytesReceived, totalSize });
       }
@@ -115,40 +123,94 @@
         const start = index * chunkSize;
         const end = Math.min(start + chunkSize, this.file.size);
         const blob = this.file.slice(start, end);
-        await this.uploadChunkWithRetry(sessionId, index, blob);
+        const baseBytes = this.bytesFromSet(uploadedSet, chunkSize);
+        await this.uploadChunkWithRetry(sessionId, index, blob, baseBytes);
         uploadedSet.add(index);
         this.updateProgressFromSet(uploadedSet, chunkSize);
       }
     }
 
-    updateProgressFromSet(uploadedSet, chunkSize) {
+    bytesFromSet(uploadedSet, chunkSize) {
       let bytesReceived = 0;
       uploadedSet.forEach((index) => {
         const start = index * chunkSize;
         bytesReceived += Math.min(chunkSize, this.file.size - start);
       });
+      return bytesReceived;
+    }
+
+    updateProgressFromSet(uploadedSet, chunkSize) {
+      const bytesReceived = this.bytesFromSet(uploadedSet, chunkSize);
       const percent = Math.min(100, Math.round((bytesReceived / this.file.size) * 100));
-      this.emitProgress(percent, bytesReceived, this.file.size);
+      this.emitProgress(percent, bytesReceived, this.file.size, true);
       this.emitStatus(
         `Загрузка… ${percent}% (${formatBytes(bytesReceived)} / ${formatBytes(this.file.size)})`,
         'uploading'
       );
     }
 
-    async uploadChunkWithRetry(sessionId, index, blob) {
+    uploadChunkViaXhr(sessionId, index, buffer, baseBytes) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        this._activeXhr = xhr;
+        xhr.open('PUT', `${this.apiPrefix}/chunk/${sessionId}/${index}`);
+        xhr.withCredentials = true;
+        xhr.responseType = 'json';
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const bytesReceived = Math.min(this.file.size, baseBytes + event.loaded);
+          const percent = Math.min(100, Math.round((bytesReceived / this.file.size) * 100));
+          this.emitProgress(percent, bytesReceived, this.file.size);
+        };
+
+        xhr.onload = () => {
+          this._activeXhr = null;
+          const ok = xhr.status >= 200 && xhr.status < 300;
+          const data = xhr.response && typeof xhr.response === 'object'
+            ? xhr.response
+            : (() => {
+              try {
+                return JSON.parse(xhr.responseText || '{}');
+              } catch {
+                return {};
+              }
+            })();
+
+          if (ok) {
+            resolve(data);
+            return;
+          }
+          reject(new Error(data.error || 'Ошибка запроса'));
+        };
+
+        xhr.onerror = () => {
+          this._activeXhr = null;
+          reject(new Error('Ошибка сети'));
+        };
+
+        xhr.onabort = () => {
+          this._activeXhr = null;
+          reject(new Error('Отменено'));
+        };
+
+        xhr.send(buffer);
+      });
+    }
+
+    async uploadChunkWithRetry(sessionId, index, blob, baseBytes) {
       let lastError;
       for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
         if (this.cancelled) throw new Error('Отменено');
         try {
           const buffer = await blob.arrayBuffer();
-          const data = await this.api(`${this.apiPrefix}/chunk/${sessionId}/${index}`, {
-            method: 'PUT',
-            body: buffer,
-          });
+          const data = await this.uploadChunkViaXhr(sessionId, index, buffer, baseBytes);
           this.session = { ...this.session, ...data, sessionId };
           this.waitingForResume = false;
           return data;
         } catch (error) {
+          if (error.message === 'Отменено') throw error;
           lastError = error;
           if (attempt < MAX_RETRIES - 1) {
             this.emitStatus(
@@ -203,7 +265,7 @@
       });
       sessionStorage.removeItem(storageKey(this.apiPrefix, this.file));
       this.emitStatus('Загружено', 'done');
-      this.emitProgress(100, this.file.size, this.file.size);
+      this.emitProgress(100, this.file.size, this.file.size, true);
       if (this.onComplete) this.onComplete(result);
       return result;
     }
@@ -247,6 +309,10 @@
       this.cancelled = true;
       this.paused = false;
       this.waitingForResume = false;
+      if (this._activeXhr) {
+        this._activeXhr.abort();
+        this._activeXhr = null;
+      }
       if (this.session?.sessionId) {
         await this.api(`${this.apiPrefix}/cancel/${this.session.sessionId}`, {
           method: 'DELETE',
