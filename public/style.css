@@ -426,3 +426,150 @@ button[type="submit"]:disabled {
   width: auto;
   margin-top: 8px;
 }
+
+.btn-secondary {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-danger {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.btn-danger:hover {
+  background: #fecaca;
+}
+
+.upload-queue {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+
+.upload-queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.upload-queue-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.upload-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.upload-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.upload-queue-item {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.upload-queue-item.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.upload-queue-item-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.875rem;
+}
+
+.upload-queue-item-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+.upload-queue-item-progress {
+  margin-top: 8px;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.upload-queue-item-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  width: 0;
+}
+
+.upload-queue-item-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.admin-file-links {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.admin-file-link-row {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-file-link-row input {
+  margin-top: 0;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
+.link-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  margin-left: 6px;
+}
+
+.link-badge.active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.link-badge.inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.admin-file-actions {
+  display: grid;
+  gap: 6px;
+  min-width: 120px;
+}
+
+.admin-file-actions input[type="text"] {
+  margin-top: 0;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}

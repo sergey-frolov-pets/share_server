@@ -63,9 +63,18 @@ const updateBtn = document.getElementById('update-btn');
 const updateError = document.getElementById('update-error');
 const updateSuccess = document.getElementById('update-success');
 
+const updateSuccess = document.getElementById('update-success');
+const uploadQueueEl = document.getElementById('upload-queue');
+const uploadQueueList = document.getElementById('upload-queue-list');
+const queuePauseBtn = document.getElementById('queue-pause-btn');
+const queueResumeBtn = document.getElementById('queue-resume-btn');
+const queueClearBtn = document.getElementById('queue-clear-btn');
+const adminFilesBody = document.getElementById('admin-files-body');
+const adminFilesMessage = document.getElementById('admin-files-message');
+
 let currentUploadId = null;
+let activeQueueItemId = null;
 let uploadPromise = null;
-let createUploader = null;
 let updateUploadId = null;
 let updateUploadPromise = null;
 let updateUploader = null;
@@ -160,16 +169,20 @@ function buildLimitPayload(linkMax, linkDays, fileMax, fileDays) {
 }
 
 function resetCreateState() {
-  if (createUploader) {
-    createUploader.cancel().catch(() => {});
-    createUploader = null;
-  }
+  uploadQueue.items = [];
+  uploadQueue.running = false;
+  uploadQueue.queuePaused = false;
+  uploadQueue.currentUploader = null;
+  uploadQueue.currentItemId = null;
+  activeQueueItemId = null;
   currentUploadId = null;
   uploadPromise = null;
   fileInput.value = '';
   hide(fileInfo);
   hide(shareForm);
   hide(result);
+  hide(uploadQueueEl);
+  uploadQueueList.innerHTML = '';
   setMessage(shareError, null);
   setMessage(nameError, null);
   shortNameInput.value = '';
@@ -187,6 +200,105 @@ function resetCreateState() {
   document.getElementById('upload-progress')?.classList.add('hidden');
   const fill = document.getElementById('upload-progress-fill');
   if (fill) fill.style.width = '0%';
+  hide(queueResumeBtn);
+  show(queuePauseBtn);
+}
+
+const uploadQueue = new UploadQueue({
+  apiPrefix: '/api/upload',
+  fetchFn: (path, opts) => fetch(path, { credentials: 'same-origin', ...opts }),
+  onChange: renderUploadQueue,
+  onActiveItem: handleQueueActiveItem,
+});
+
+function renderUploadQueue(state) {
+  if (!state.items.length) {
+    hide(uploadQueueEl);
+    uploadQueueList.innerHTML = '';
+    return;
+  }
+
+  show(uploadQueueEl);
+  uploadQueueList.innerHTML = state.items.map((item) => {
+    const label = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
+    const activeClass = item.id === state.currentItemId ? ' active' : '';
+    const progressHtml = ['pending', 'uploading', 'paused'].includes(item.status)
+      ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
+      : '';
+    const errorHtml = item.error ? `<div class="upload-queue-item-meta">${item.error}</div>` : '';
+    return `
+      <li class="upload-queue-item${activeClass}" data-queue-id="${item.id}">
+        <div class="upload-queue-item-main">
+          <strong>${item.name}</strong>
+          <span>${label}${item.progress ? ` · ${item.progress}%` : ''}</span>
+        </div>
+        <div class="upload-queue-item-meta">${formatUploadBytes(item.size)}</div>
+        ${progressHtml}
+        ${errorHtml}
+        <div class="upload-queue-item-actions">
+          ${item.status === 'ready' ? `<button type="button" class="btn-small queue-select-btn" data-queue-id="${item.id}">Создать ссылку</button>` : ''}
+          ${['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? `<button type="button" class="btn-small btn-secondary queue-cancel-btn" data-queue-id="${item.id}">Убрать</button>` : ''}
+        </div>
+      </li>
+    `;
+  }).join('');
+
+  uploadQueueList.querySelectorAll('.queue-select-btn').forEach((btn) => {
+    btn.addEventListener('click', () => uploadQueue.setActiveItem(btn.dataset.queueId));
+  });
+  uploadQueueList.querySelectorAll('.queue-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => uploadQueue.cancelItem(btn.dataset.queueId));
+  });
+
+  if (state.queuePaused) {
+    hide(queuePauseBtn);
+    show(queueResumeBtn);
+  } else {
+    show(queuePauseBtn);
+    hide(queueResumeBtn);
+  }
+}
+
+async function handleQueueActiveItem(item) {
+  if (!item) {
+    hide(shareForm);
+    hide(fileInfo);
+    currentUploadId = null;
+    activeQueueItemId = null;
+    return;
+  }
+
+  activeQueueItemId = item.id;
+  fileNameEl.textContent = item.name;
+  uploadStatusEl.textContent = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
+  uploadStatusEl.className = 'status uploading';
+  show(fileInfo);
+
+  if (item.status === 'ready' && item.uploadId) {
+    currentUploadId = item.uploadId;
+    uploadStatusEl.textContent = 'Готов к публикации';
+    uploadStatusEl.className = 'status done';
+    show(shareForm);
+    shareBtn.disabled = false;
+    await assignDefaultShortName();
+    return;
+  }
+
+  if (item.status === 'uploading') {
+    hide(shareForm);
+    shareBtn.disabled = true;
+  } else {
+    hide(shareForm);
+    shareBtn.disabled = true;
+  }
+}
+
+function enqueueFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  uploadQueue.addFiles(fileList);
+  show(uploadQueueEl);
+  hide(result);
+  setMessage(shareError, null);
 }
 
 function resetManageState() {
@@ -223,51 +335,33 @@ function createChunkUploader(isUpdate) {
   return uploader;
 }
 
-function startUpload(file, isUpdate = false) {
+function handleFile(file, isUpdate = false) {
+  if (!file) return;
   if (isUpdate) {
-    if (updateUploader) updateUploader.cancel().catch(() => {});
-    updateUploadId = null;
-    updateUploadPromise = null;
-    updateFileNameEl.textContent = file.name;
-    show(updateFileInfo);
-    updateUploader = createChunkUploader(true);
-  } else {
-    resetCreateState();
-    fileNameEl.textContent = file.name;
-    show(fileInfo);
-    show(shareForm);
-    assignDefaultShortName();
-    createUploader = createChunkUploader(false);
+    startUpdateUpload(file);
+    return;
   }
+  enqueueFiles([file]);
+}
 
-  const uploader = isUpdate ? updateUploader : createUploader;
-  const promise = uploader.upload(file)
+function startUpdateUpload(file) {
+  if (updateUploader) updateUploader.cancel().catch(() => {});
+  updateUploadId = null;
+  updateUploadPromise = null;
+  updateFileNameEl.textContent = file.name;
+  show(updateFileInfo);
+  updateUploader = createChunkUploader(true);
+
+  updateUploadPromise = updateUploader.upload(file)
     .then((data) => {
       if (!data) return data;
-      if (isUpdate) {
-        updateUploadId = data.uploadId;
-      } else {
-        currentUploadId = data.uploadId;
-      }
+      updateUploadId = data.uploadId;
       return data;
     })
     .catch((err) => {
-      if (uploader.waitingForResume) {
-        return null;
-      }
+      if (updateUploader.waitingForResume) return null;
       throw err;
     });
-
-  if (isUpdate) {
-    updateUploadPromise = promise;
-  } else {
-    uploadPromise = promise;
-  }
-}
-
-function handleFile(file, isUpdate = false) {
-  if (!file) return;
-  startUpload(file, isUpdate);
 }
 
 function switchTab(active) {
@@ -331,9 +425,126 @@ async function loadAdminPanel() {
     adminUsersBody.querySelectorAll('.user-save').forEach((btn) => {
       btn.addEventListener('click', saveUserRow);
     });
+
+    await loadAdminFiles();
   } catch (err) {
     setMessage(adminError, err.message, 'error');
   }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function loadAdminFiles() {
+  setMessage(adminFilesMessage, null);
+  const { files } = await api('/api/admin/files');
+
+  adminFilesBody.innerHTML = files.map((file) => {
+    const linksHtml = file.links.length
+      ? file.links.map((link) => `
+          <div class="admin-file-link-row" data-link-id="${link.id}">
+            <input type="text" class="admin-link-short-name" value="${escapeHtml(link.shortName)}" title="Короткое имя ссылки">
+            <span class="upload-queue-item-meta">
+              ${link.shareUrl}
+              <span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? 'активна' : 'неактивна'}</span>
+            </span>
+          </div>
+        `).join('')
+      : '<span class="hint">Нет ссылок</span>';
+
+    const warning = file.activeLinkCount > 0
+      ? `<div class="upload-queue-item-meta">Активных ссылок: ${file.activeLinkCount}</div>`
+      : '';
+
+    return `
+      <tr data-file-id="${file.id}">
+        <td>
+          <div class="admin-file-actions">
+            <input type="text" class="admin-file-name" value="${escapeHtml(file.originalName)}">
+            ${warning}
+            <span class="hint">${file.createdAt}${file.isChunked ? ' · чанки' : ''}</span>
+          </div>
+        </td>
+        <td>${file.sizeMb ?? 0} МБ</td>
+        <td><div class="admin-file-links">${linksHtml}</div></td>
+        <td>
+          <div class="admin-file-actions">
+            <button type="button" class="btn-small admin-file-save">Сохранить</button>
+            <button type="button" class="btn-small btn-danger admin-file-delete">Удалить</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  adminFilesBody.querySelectorAll('.admin-file-save').forEach((btn) => {
+    btn.addEventListener('click', saveAdminFileRow);
+  });
+  adminFilesBody.querySelectorAll('.admin-file-delete').forEach((btn) => {
+    btn.addEventListener('click', deleteAdminFileRow);
+  });
+}
+
+async function saveAdminFileRow(e) {
+  const row = e.target.closest('tr');
+  const fileId = row.dataset.fileId;
+  const originalName = row.querySelector('.admin-file-name').value.trim();
+  const links = [...row.querySelectorAll('.admin-file-link-row')].map((linkRow) => ({
+    id: parseInt(linkRow.dataset.linkId, 10),
+    shortName: linkRow.querySelector('.admin-link-short-name').value.trim(),
+  }));
+
+  try {
+    const data = await api(`/api/admin/files/${fileId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ originalName, links }),
+    });
+    setMessage(adminFilesMessage, data.warning || 'Файл и ссылки обновлены', data.warning ? 'error' : 'success');
+    await loadAdminFiles();
+  } catch (err) {
+    setMessage(adminError, err.message, 'error');
+  }
+}
+
+async function deleteAdminFileRow(e) {
+  const row = e.target.closest('tr');
+  const fileId = row.dataset.fileId;
+  const fileName = row.querySelector('.admin-file-name').value.trim();
+
+  try {
+    await api(`/api/admin/files/${fileId}`, { method: 'DELETE', body: JSON.stringify({}) });
+  } catch (err) {
+    if (!err.message.includes('активных')) {
+      setMessage(adminError, err.message, 'error');
+      return;
+    }
+
+    const force = window.confirm(
+      `${err.message}\n\nУдалить файл «${fileName}» и все связанные ссылки?`
+    );
+    if (!force) return;
+
+    try {
+      const data = await api(`/api/admin/files/${fileId}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ force: true }),
+      });
+      setMessage(adminFilesMessage, data.warning || 'Файл удалён', data.warning ? 'error' : 'success');
+      await loadAdminPanel();
+      return;
+    } catch (forceErr) {
+      setMessage(adminError, forceErr.message, 'error');
+      return;
+    }
+  }
+
+  setMessage(adminFilesMessage, 'Файл удалён', 'success');
+  await loadAdminPanel();
 }
 
 async function saveUserRow(e) {
@@ -387,16 +598,20 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
-  if (e.dataTransfer.files.length > 1) {
-    setMessage(shareError, 'Загрузите только один файл', 'error');
-    return;
-  }
-  handleFile(file, false);
+  const files = [...e.dataTransfer.files];
+  if (!files.length) return;
+  enqueueFiles(files);
 });
 
-fileInput.addEventListener('change', () => handleFile(fileInput.files[0], false));
+fileInput.addEventListener('change', () => {
+  const files = [...fileInput.files];
+  if (files.length) enqueueFiles(files);
+  fileInput.value = '';
+});
+
+queuePauseBtn.addEventListener('click', () => uploadQueue.pauseQueue());
+queueResumeBtn.addEventListener('click', () => uploadQueue.resumeQueue());
+queueClearBtn.addEventListener('click', () => uploadQueue.clearFinished());
 
 updateDropZone.addEventListener('click', () => updateFileInput.click());
 updateDropZone.addEventListener('dragover', (e) => {
@@ -449,12 +664,8 @@ shareForm.addEventListener('submit', async (e) => {
   shareBtn.disabled = true;
 
   try {
-    if (!uploadPromise) throw new Error('Сначала выберите файл');
-    const uploadResult = await uploadPromise;
-    if (uploadResult === null && createUploader?.waitingForResume) {
-      throw new Error('Дождитесь окончания загрузки или нажмите «Продолжить»');
-    }
-    if (!currentUploadId) throw new Error('Файл ещё не загружен');
+    if (!currentUploadId) throw new Error('Дождитесь загрузки файла или выберите элемент очереди');
+    if (!activeQueueItemId) throw new Error('Выберите файл в очереди для публикации');
 
     const data = await api('/api/share', {
       method: 'POST',
@@ -475,11 +686,12 @@ shareForm.addEventListener('submit', async (e) => {
     });
 
     hide(shareForm);
-    hide(dropZone);
     hide(fileInfo);
     shareLink.href = data.shareUrl;
     shareLink.textContent = data.shareUrl;
     show(result);
+    uploadQueue.markShared(activeQueueItemId);
+    shareBtn.disabled = false;
   } catch (err) {
     setMessage(shareError, err.message, 'error');
   } finally {
@@ -588,6 +800,7 @@ updateForm.addEventListener('submit', async (e) => {
 newUploadBtn.addEventListener('click', () => {
   resetCreateState();
   show(dropZone);
+  hide(result);
 });
 
 function showLogin() {

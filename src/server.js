@@ -33,6 +33,11 @@ const {
   handleAdminStorageSettings,
 } = require('./admin');
 const {
+  handleAdminFilesList,
+  handleAdminFileRename,
+  handleAdminFileDelete,
+} = require('./adminFiles');
+const {
   handleCreateShare,
   handleGetShare,
   handleUpdateShare,
@@ -208,6 +213,9 @@ app.get('/api/admin/stats', requireAdminAuth, handleAdminStats);
 app.get('/api/admin/users', requireAdminAuth, handleAdminUsers);
 app.put('/api/admin/users/:id', requireAdminAuth, handleAdminUpdateUser);
 app.put('/api/admin/storage', requireAdminAuth, handleAdminStorageSettings);
+app.get('/api/admin/files', requireAdminAuth, handleAdminFilesList);
+app.put('/api/admin/files/:id', requireAdminAuth, handleAdminFileRename);
+app.delete('/api/admin/files/:id', requireAdminAuth, handleAdminFileDelete);
 
 app.get('/api/user/upload-quota', requireUserAuth, (req, res) => {
   const user = require('./db').getFullUserById(req.session.userId);

@@ -718,6 +718,54 @@ function deleteExpiredTokens() {
   db.prepare('DELETE FROM tokens WHERE expires_at <= datetime(\'now\') OR used_at IS NOT NULL').run();
 }
 
+function getAllStoredFilesAdmin() {
+  return db.prepare(`
+    SELECT
+      s.*,
+      (SELECT COUNT(*) FROM links l WHERE l.stored_file_id = s.id) AS link_count
+    FROM stored_files s
+    ORDER BY s.created_at DESC
+  `).all();
+}
+
+function getLinksForStoredFile(storedFileId) {
+  return db.prepare(`
+    SELECT
+      id,
+      short_name,
+      link_download_count,
+      link_max_downloads,
+      link_expires_at,
+      created_at,
+      updated_at
+    FROM links
+    WHERE stored_file_id = ?
+    ORDER BY created_at DESC
+  `).all(storedFileId);
+}
+
+function updateStoredFileRename(id, originalName, storedPath) {
+  db.prepare(`
+    UPDATE stored_files
+    SET original_name = @originalName, stored_path = @storedPath
+    WHERE id = @id
+  `).run({ id, originalName, storedPath });
+}
+
+function updateLinkShortNameById(linkId, shortName) {
+  db.prepare(`
+    UPDATE links
+    SET short_name = @shortName, updated_at = datetime('now')
+    WHERE id = @linkId
+  `).run({ linkId, shortName });
+}
+
+function touchLinksUpdatedAt(storedFileId) {
+  db.prepare(`
+    UPDATE links SET updated_at = datetime('now') WHERE stored_file_id = ?
+  `).run(storedFileId);
+}
+
 // Legacy aliases used by access/download until fully migrated
 function getFileByShortName(shortName) {
   return getLinkWithFile(shortName);
@@ -772,4 +820,9 @@ module.exports = {
   setGlobalMaxStorageBytes,
   getTotalDiskUsageBytes,
   checkGlobalStorageQuota,
+  getAllStoredFilesAdmin,
+  getLinksForStoredFile,
+  updateStoredFileRename,
+  updateLinkShortNameById,
+  touchLinksUpdatedAt,
 };
