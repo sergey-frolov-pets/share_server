@@ -11,7 +11,7 @@
   };
 
   const SERVER_STATUS_LABELS = {
-    active: 'Загружается',
+    active: 'На сервере',
     paused: 'На паузе',
   };
 
@@ -119,33 +119,58 @@
       this.onChange(this.getState());
     }
 
+    getRemoteWaitingItems() {
+      return this.items.filter((item) => (
+        !item.file && ['remote', 'paused'].includes(item.status)
+      ));
+    }
+
     formatItemStatus(item) {
-      const pendingItems = this.items.filter((entry) => entry.status === 'pending');
-      const pendingIndex = pendingItems.findIndex((entry) => entry.id === item.id);
+      if (item.status === 'uploading') {
+        return item.progress ? `Загружается · ${item.progress}%` : 'Загружается';
+      }
 
       if (item.status === 'pending') {
+        const pendingItems = this.items.filter((entry) => entry.status === 'pending');
+        const pendingIndex = pendingItems.findIndex((entry) => entry.id === item.id);
         if (pendingItems.length > 1 && pendingIndex >= 0) {
           return `Ожидает · ${pendingIndex + 1}/${pendingItems.length}`;
         }
         return STATUS_LABELS.pending;
       }
 
-      if (item.status === 'remote' || (item.status === 'paused' && !item.file)) {
-        const label = SERVER_STATUS_LABELS[item.serverStatus] || STATUS_LABELS[item.status] || item.status;
-        return item.progress ? `${label} · ${item.progress}%` : label;
+      if (item.status === 'paused') {
+        if (!item.file) {
+          return item.progress ? `На паузе · ${item.progress}%` : 'На паузе';
+        }
+        return item.progress ? `На паузе · ${item.progress}%` : 'На паузе';
       }
 
-      const label = STATUS_LABELS[item.status] || item.status;
-      return item.progress && ['uploading', 'paused'].includes(item.status)
-        ? `${label} · ${item.progress}%`
-        : label;
+      if (item.status === 'remote') {
+        const waiting = this.getRemoteWaitingItems();
+        const waitingIndex = waiting.findIndex((entry) => entry.id === item.id);
+        const pct = item.progress ? ` · ${item.progress}%` : '';
+        if (waiting.length > 1 && waitingIndex > 0) {
+          return `Ожидает · ${waitingIndex + 1}/${waiting.length}${pct}`;
+        }
+        return `На сервере${pct} · выберите файл`;
+      }
+
+      return STATUS_LABELS[item.status] || item.status;
     }
 
     formatItemBadge(item) {
       if (item.status === 'uploading') return { text: 'Загружается', className: 'uploading' };
       if (item.status === 'paused') return { text: 'На паузе', className: 'paused' };
       if (item.status === 'pending') return { text: 'Ожидает', className: 'pending' };
-      if (item.status === 'remote') return { text: 'На сервере', className: 'remote' };
+      if (item.status === 'remote') {
+        const waiting = this.getRemoteWaitingItems();
+        const waitingIndex = waiting.findIndex((entry) => entry.id === item.id);
+        if (waiting.length > 1 && waitingIndex > 0) {
+          return { text: 'Ожидает', className: 'pending' };
+        }
+        return { text: 'На сервере', className: 'remote' };
+      }
       if (item.status === 'ready') return { text: 'Готов', className: 'ready' };
       return null;
     }
@@ -159,12 +184,12 @@
       const total = item.size;
       let detail = `${formatBytes(received)} / ${formatBytes(total)}`;
 
-      const showEta = ['uploading', 'remote'].includes(item.status)
-        && item.serverStatus !== 'paused'
-        && item.etaSeconds != null;
+      const showEta = item.status === 'uploading' && item.etaSeconds != null;
       const eta = showEta ? formatDuration(item.etaSeconds) : null;
       if (eta) {
         detail += ` · осталось ${eta}`;
+      } else if (item.status === 'remote') {
+        detail += ' · нужен тот же файл';
       }
 
       return detail;

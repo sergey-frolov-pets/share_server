@@ -736,6 +736,15 @@ button[type="submit"]:disabled {
   height: 100%;
   background: var(--accent);
   width: 0;
+  transition: width 0.15s linear;
+}
+
+.upload-queue-item-progress--idle .upload-queue-item-progress-fill {
+  background: #93c5fd;
+}
+
+.upload-queue-item-progress--idle {
+  opacity: 0.85;
 }
 
 .upload-queue-item-actions {
