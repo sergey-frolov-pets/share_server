@@ -40,6 +40,24 @@
     keysToRemove.forEach((key) => sessionStorage.removeItem(key));
   }
 
+  function formatDuration(totalSeconds) {
+    if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return null;
+    if (totalSeconds < 60) return '≈ 1 мин';
+    const minutes = Math.ceil(totalSeconds / 60);
+    if (minutes < 60) return `≈ ${minutes} мин`;
+    const hours = Math.floor(minutes / 60);
+    const remMin = minutes % 60;
+    return remMin ? `≈ ${hours} ч ${remMin} мин` : `≈ ${hours} ч`;
+  }
+
+  function bytesFromProgress(item) {
+    if (Number.isFinite(item.bytesReceived)) return item.bytesReceived;
+    if (item.progress && item.size) {
+      return Math.round((item.size * item.progress) / 100);
+    }
+    return 0;
+  }
+
   function sessionToItem(session) {
     const serverStatus = session.status || 'active';
     return {
@@ -51,6 +69,8 @@
       serverStatus,
       status: serverStatus === 'paused' ? 'paused' : 'remote',
       progress: session.progress || 0,
+      bytesReceived: session.bytesReceived || 0,
+      etaSeconds: null,
       uploadId: null,
       error: null,
     };
@@ -106,6 +126,67 @@
         : label;
     }
 
+    formatItemProgressDetail(item) {
+      const formatBytes = global.formatUploadBytes;
+      if (!formatBytes || !item.size) return '';
+      if (!['pending', 'uploading', 'paused', 'remote'].includes(item.status)) return '';
+
+      const received = bytesFromProgress(item);
+      const total = item.size;
+      let detail = `${formatBytes(received)} / ${formatBytes(total)}`;
+
+      const showEta = ['uploading', 'remote'].includes(item.status)
+        && item.serverStatus !== 'paused'
+        && item.etaSeconds != null;
+      const eta = showEta ? formatDuration(item.etaSeconds) : null;
+      if (eta) {
+        detail += ` · осталось ${eta}`;
+      }
+
+      return detail;
+    }
+
+    updateItemTransferStats(item, bytesReceived, totalSize, sampleIntervalSec = null) {
+      const total = totalSize || item.size || 0;
+      const received = Math.min(total, Math.max(0, bytesReceived));
+      const prevBytes = Number.isFinite(item.bytesReceived) ? item.bytesReceived : 0;
+
+      item.size = total;
+      item.bytesReceived = received;
+      item.progress = total ? Math.min(100, Math.round((received / total) * 100)) : 0;
+
+      if (sampleIntervalSec && received > prevBytes) {
+        const speedBps = (received - prevBytes) / sampleIntervalSec;
+        if (speedBps > 0) {
+          item.etaSeconds = Math.max(0, (total - received) / speedBps);
+        }
+        return;
+      }
+
+      if (!item._etaTracker) {
+        item._etaTracker = { lastBytes: received, lastTime: Date.now(), speedBps: 0 };
+      }
+
+      const tracker = item._etaTracker;
+      const now = Date.now();
+      const elapsedSec = (now - tracker.lastTime) / 1000;
+
+      if (elapsedSec >= 0.5 && received > tracker.lastBytes) {
+        const instantSpeed = (received - tracker.lastBytes) / elapsedSec;
+        tracker.speedBps = tracker.speedBps
+          ? tracker.speedBps * 0.7 + instantSpeed * 0.3
+          : instantSpeed;
+        tracker.lastBytes = received;
+        tracker.lastTime = now;
+      }
+
+      if (tracker.speedBps > 0 && received < total) {
+        item.etaSeconds = Math.max(0, (total - received) / tracker.speedBps);
+      } else if (received >= total) {
+        item.etaSeconds = 0;
+      }
+    }
+
     syncSessionsFromServer(sessions) {
       const entries = Array.isArray(sessions) ? sessions : [];
       const activeSessionIds = new Set(entries.map((session) => session.sessionId).filter(Boolean));
@@ -125,14 +206,21 @@
         if (existing) {
           if (existing.status === 'uploading') continue;
           const nextStatus = session.status === 'paused' ? 'paused' : 'remote';
+          const prevBytes = existing.bytesReceived || 0;
+          const nextBytes = session.bytesReceived || 0;
           if (
             existing.serverStatus !== session.status
             || existing.progress !== session.progress
             || existing.status !== nextStatus
+            || existing.bytesReceived !== nextBytes
           ) {
             existing.serverStatus = session.status;
             existing.progress = session.progress || 0;
+            existing.bytesReceived = nextBytes;
             existing.status = nextStatus;
+            if (nextBytes > prevBytes) {
+              this.updateItemTransferStats(existing, nextBytes, session.totalSize, 4);
+            }
             changed = true;
           }
           continue;
@@ -207,6 +295,8 @@
           size: file.size,
           status: 'pending',
           progress: 0,
+          bytesReceived: 0,
+          etaSeconds: null,
           uploadId: null,
           error: null,
         });
@@ -318,8 +408,8 @@
       this.currentUploader = uploader;
 
       uploader.setHandlers({
-        onProgress: ({ percent }) => {
-          next.progress = percent;
+        onProgress: ({ percent, bytesReceived, totalSize }) => {
+          this.updateItemTransferStats(next, bytesReceived, totalSize);
           next.serverStatus = 'active';
           this.notify(false);
         },
@@ -335,6 +425,8 @@
           next.serverStatus = null;
           next.status = 'ready';
           next.progress = 100;
+          next.bytesReceived = next.size;
+          next.etaSeconds = 0;
           this.onActiveItem(next);
         } else if (uploader.waitingForResume) {
           next.status = 'paused';
