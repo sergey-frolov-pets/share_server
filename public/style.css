@@ -686,6 +686,19 @@ button[type="submit"]:disabled {
   background: #f0f9ff;
 }
 
+.upload-queue-item--ready {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.upload-queue-item--clickable {
+  cursor: pointer;
+}
+
+.upload-queue-item--clickable:hover {
+  filter: brightness(0.98);
+}
+
 .upload-queue-item-title-row {
   display: flex;
   align-items: center;

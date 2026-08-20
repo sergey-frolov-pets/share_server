@@ -76,7 +76,7 @@
       name: session.originalName,
       size: session.totalSize,
       serverStatus,
-      status: serverStatus === 'paused' ? 'paused' : 'remote',
+      status: 'paused',
       progress: session.progress || 0,
       bytesReceived: session.bytesReceived || 0,
       etaSeconds: null,
@@ -129,10 +129,14 @@
       return this.items.filter((item) => item.status === 'uploading').length;
     }
 
-    getRemoteWaitingItems() {
+    getWaitingForFileItems() {
       return this.items.filter((item) => (
-        !item.file && ['remote', 'paused'].includes(item.status)
+        !item.file && item.sessionId && item.status === 'paused'
       ));
+    }
+
+    getRemoteWaitingItems() {
+      return this.getWaitingForFileItems();
     }
 
     formatItemStatus(item) {
@@ -154,17 +158,15 @@
 
       if (item.status === 'paused') {
         const pct = item.progress ? ` · ${item.progress}%` : '';
+        if (!item.file && item.sessionId) {
+          const waiting = this.getWaitingForFileItems();
+          const waitingIndex = waiting.findIndex((entry) => entry.id === item.id);
+          const order = waiting.length > 1 ? ` · ${waitingIndex + 1}/${waiting.length}` : '';
+          return `На паузе · выберите тот же файл${order}${pct}`;
+        }
         const speed = formatTransferSpeed(item.speedBps);
         if (speed) return `На паузе${pct} · было ${speed}`;
         return item.progress ? `На паузе · ${item.progress}%` : 'На паузе';
-      }
-
-      if (item.status === 'remote') {
-        const waiting = this.getRemoteWaitingItems();
-        const waitingIndex = waiting.findIndex((entry) => entry.id === item.id);
-        const pct = item.progress ? ` · ${item.progress}%` : '';
-        const order = waiting.length > 1 ? ` · ${waitingIndex + 1}/${waiting.length}` : '';
-        return `Нужен файл снова${order}${pct}`;
       }
 
       return STATUS_LABELS[item.status] || item.status;
@@ -174,9 +176,6 @@
       if (item.status === 'uploading') return { text: 'Загружается', className: 'uploading' };
       if (item.status === 'paused') return { text: 'На паузе', className: 'paused' };
       if (item.status === 'pending') return { text: 'Ожидает', className: 'pending' };
-      if (item.status === 'remote') {
-        return { text: 'На сервере', className: 'remote' };
-      }
       if (item.status === 'ready') return { text: 'Готов', className: 'ready' };
       return null;
     }
@@ -189,8 +188,8 @@
       const received = bytesFromProgress(item);
       const total = item.size;
 
-      if (item.status === 'remote') {
-        return `Сохранено ${formatBytes(received)} / ${formatBytes(total)} · загрузка не идёт — выберите тот же файл`;
+      if (item.status === 'paused' && !item.file && item.sessionId) {
+        return `Сохранено ${formatBytes(received)} / ${formatBytes(total)} · выберите тот же файл выше`;
       }
 
       let detail = `${formatBytes(received)} / ${formatBytes(total)}`;
@@ -210,9 +209,7 @@
     }
 
     hasRemoteSessionsWaitingForFile() {
-      return this.items.some((item) => (
-        item.sessionId && !item.file && ['remote', 'paused'].includes(item.status)
-      ));
+      return this.getWaitingForFileItems().length > 0;
     }
 
     updateItemTransferStats(item, bytesReceived, totalSize, sampleIntervalSec = null) {
@@ -281,19 +278,18 @@
           if (existing.file || existing.status === 'uploading' || existing.status === 'pending') {
             continue;
           }
-          const nextStatus = session.status === 'paused' ? 'paused' : 'remote';
           const prevBytes = existing.bytesReceived || 0;
           const nextBytes = session.bytesReceived || 0;
           if (
             existing.serverStatus !== session.status
             || existing.progress !== session.progress
-            || existing.status !== nextStatus
+            || existing.status !== 'paused'
             || existing.bytesReceived !== nextBytes
           ) {
             existing.serverStatus = session.status;
             existing.progress = session.progress || 0;
             existing.bytesReceived = nextBytes;
-            existing.status = nextStatus;
+            existing.status = 'paused';
             if (nextBytes > prevBytes) {
               this.updateItemTransferStats(existing, nextBytes, session.totalSize, SERVER_SYNC_MS / 1000);
             }
@@ -328,7 +324,7 @@
     updateDisplayTimer() {
       const shouldTick = this.items.some((item) => (
         item.status === 'uploading'
-        || (item.sessionId && ['remote', 'paused'].includes(item.status) && !item.file)
+        || (item.sessionId && item.status === 'paused' && !item.file)
       ));
 
       if (shouldTick && !this._displayTimer) {
@@ -367,35 +363,51 @@
         throw new Error(data.error || 'Ошибка запроса');
       }
       this.syncSessionsFromServer(data.sessions || []);
+      await this.pauseSessionsWithoutFile();
+    }
+
+    getNextWaitingForFile() {
+      return this.getWaitingForFileItems().find((item) => !this.uploaders.has(item.id)) || null;
     }
 
     getNextWaitingRemote() {
-      return this.items.find((item) => (
-        !item.file
-        && item.sessionId
-        && ['remote', 'paused'].includes(item.status)
-        && !this.uploaders.has(item.id)
-      )) || null;
+      return this.getNextWaitingForFile();
+    }
+
+    async pauseSessionsWithoutFile() {
+      const targets = this.getWaitingForFileItems().filter((item) => !this.uploaders.has(item.id));
+      if (!targets.length) return 0;
+
+      let changed = false;
+      await Promise.all(targets.map(async (item) => {
+        if (item.serverStatus !== 'paused') {
+          await this.fetchFn(`${this.apiPrefix}/pause/${item.sessionId}`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+          }).catch(() => {});
+          item.serverStatus = 'paused';
+          changed = true;
+        }
+        if (item.status !== 'paused') {
+          item.status = 'paused';
+          changed = true;
+        }
+      }));
+
+      if (changed) {
+        this.notify();
+      }
+      return targets.length;
     }
 
     findRemoteMatchForFile(file) {
       return this.items.find((item) => (
         item.sessionId
         && fileMatchesItem(file, item)
-        && ['remote', 'paused'].includes(item.status)
+        && item.status === 'paused'
+        && !item.file
         && !this.isSessionAlreadyUploading(item.sessionId, item.id)
       )) || null;
-    }
-
-    attachFileToItem(itemId, file) {
-      const item = this.getItem(itemId);
-      if (!item || !file) return false;
-      if (!fileMatchesItem(file, item)) return false;
-      if (item.status === 'ready') return true;
-      if ((item.status === 'uploading' || this.uploaders.has(item.id)) && item.file) {
-        return true;
-      }
-      return this.reattachFileToItem(item, file);
     }
 
     isSessionAlreadyUploading(sessionId, exceptItemId = null) {
@@ -429,7 +441,7 @@
         return true;
       }
 
-      if (['remote', 'paused', 'error'].includes(item.status)) {
+      if (['paused', 'error'].includes(item.status)) {
         this.startItemUpload(item);
         return true;
       }
@@ -445,15 +457,7 @@
       return false;
     }
 
-    attachRemoteFile(file, targetItemId = null) {
-      if (targetItemId) {
-        const target = this.getItem(targetItemId);
-        if (target && ['remote', 'paused'].includes(target.status)) {
-          return this.attachFileToItem(targetItemId, file);
-        }
-        return false;
-      }
-
+    attachRemoteFile(file) {
       const match = this.findRemoteMatchForFile(file);
       if (!match) return false;
 
@@ -470,11 +474,7 @@
         return { restored: 0, pendingPermission: 0, waiting: 0 };
       }
 
-      const targets = this.items.filter((item) => (
-        !item.file
-        && item.sessionId
-        && ['remote', 'paused'].includes(item.status)
-      ));
+      const targets = this.getWaitingForFileItems();
 
       let restored = 0;
       let pendingPermission = 0;
@@ -507,22 +507,23 @@
       };
     }
 
-    addFile(file, targetItemId = null) {
+    addFile(file) {
       if (!file) return false;
 
-      if (this.attachRemoteFile(file, targetItemId)) {
+      if (this.attachRemoteFile(file)) {
         this.notify();
         return true;
+      }
+
+      const waiting = this.getWaitingForFileItems();
+      if (waiting.length) {
+        return false;
       }
 
       const existing = this.findItemForFile(file);
       if (existing && this.reattachFileToItem(existing, file)) {
         this.notify();
         return true;
-      }
-
-      if (targetItemId) {
-        return false;
       }
 
       this.items.push({
@@ -615,7 +616,7 @@
         return;
       }
 
-      if (item.sessionId && item.file && ['remote', 'paused'].includes(item.status)) {
+      if (item.sessionId && item.file && item.status === 'paused') {
         item.status = 'paused';
         item.serverStatus = 'paused';
         const uploader = this.uploaders.get(id);
@@ -631,14 +632,8 @@
         return;
       }
 
-      if (item.sessionId && item.status === 'remote' && !item.file) {
-        this.fetchFn(`${this.apiPrefix}/pause/${item.sessionId}`, {
-          method: 'POST',
-          body: JSON.stringify({}),
-        }).catch(() => {});
-        item.status = 'paused';
-        item.serverStatus = 'paused';
-        this.notify();
+      if (item.sessionId && !item.file && item.status === 'paused') {
+        return;
       }
     }
 
@@ -690,21 +685,10 @@
       }
 
       if (item.sessionId && !item.file) {
-        this.fetchFn(`${this.apiPrefix}/resume/${item.sessionId}`, {
-          method: 'POST',
-          body: JSON.stringify({}),
-        }).catch(() => {});
-        item.status = 'remote';
-        item.serverStatus = 'active';
-        this.notify();
         return;
       }
 
       if (item.file) {
-        if (item.status === 'remote') {
-          this.startItemUpload(item);
-          return;
-        }
         item.status = 'pending';
         this.notify();
         this.start();
@@ -718,8 +702,6 @@
           this.pauseItem(item.id);
         } else if (item.status === 'pending') {
           item.status = 'paused';
-        } else if (item.status === 'remote') {
-          this.pauseItem(item.id);
         }
       });
       this.notify();
@@ -870,9 +852,13 @@
         } else if (uploader.cancelled) {
           item.status = 'cancelled';
         } else if (item.status === 'uploading') {
-          item.status = item.file ? 'paused' : 'remote';
-          item.serverStatus = item.file ? 'paused' : item.serverStatus;
-          item.error = item.error || 'Загрузка не удалась — выберите файл снова';
+          item.status = item.file ? 'paused' : 'paused';
+          item.serverStatus = 'paused';
+          if (!item.file) {
+            item.error = item.error || 'Выберите тот же файл выше — загрузка продолжится автоматически';
+          } else {
+            item.error = item.error || 'Загрузка не удалась';
+          }
         }
       } catch (error) {
         if (!uploader.cancelled) {
