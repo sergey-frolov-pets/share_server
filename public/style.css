@@ -69,7 +69,20 @@ input[type="number"] {
   font-size: 1rem;
 }
 
-input:focus {
+textarea {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  resize: vertical;
+  min-height: 56px;
+  font-family: inherit;
+}
+
+input:focus,
+textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: 0;
   border-color: var(--accent);
@@ -157,6 +170,36 @@ button[type="submit"]:disabled {
 
 .status.error {
   color: var(--error);
+}
+
+.success {
+  color: var(--success);
+  font-size: 0.875rem;
+  margin: 8px 0 0;
+}
+
+.user-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.primary-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.primary-btn:hover {
+  background: var(--accent-hover);
 }
 
 .share-form {

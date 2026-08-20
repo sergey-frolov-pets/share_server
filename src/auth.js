@@ -1,18 +1,28 @@
 const config = require('./config');
+const { getUserById, getUserByEmail } = require('./db');
+const { verifySecret } = require('./password');
 
-function requireAuth(req, res, next) {
-  if (req.session?.authenticated) {
+function requireAdminAuth(req, res, next) {
+  if (req.session?.adminAuth) {
     next();
     return;
   }
   res.status(401).json({ error: 'Требуется авторизация' });
 }
 
-function handleLogin(req, res) {
+function requireUserAuth(req, res, next) {
+  if (req.session?.userId) {
+    next();
+    return;
+  }
+  res.status(401).json({ error: 'Требуется вход пользователя' });
+}
+
+function handleAdminLogin(req, res) {
   const { username, password } = req.body || {};
 
   if (username === config.loginUsername && password === config.loginPassword) {
-    req.session.authenticated = true;
+    req.session.adminAuth = true;
     res.json({ ok: true });
     return;
   }
@@ -20,19 +30,57 @@ function handleLogin(req, res) {
   res.status(401).json({ error: 'Неверный логин или пароль' });
 }
 
-function handleLogout(req, res) {
+function handleAdminLogout(req, res) {
   req.session.destroy(() => {
     res.json({ ok: true });
   });
 }
 
-function handleMe(req, res) {
-  res.json({ authenticated: Boolean(req.session?.authenticated) });
+function handleAdminMe(req, res) {
+  res.json({ authenticated: Boolean(req.session?.adminAuth) });
+}
+
+function handleUserLogin(req, res) {
+  const { email, password } = req.body || {};
+  const user = getUserByEmail(String(email || '').trim().toLowerCase());
+
+  if (!user || !verifySecret(password, user.password_hash)) {
+    res.status(401).json({ error: 'Неверный email или пароль' });
+    return;
+  }
+
+  req.session.userId = user.id;
+  res.json({ ok: true, email: user.email });
+}
+
+function handleUserLogout(req, res) {
+  delete req.session.userId;
+  res.json({ ok: true });
+}
+
+function handleUserMe(req, res) {
+  if (!req.session?.userId) {
+    res.json({ user: null });
+    return;
+  }
+
+  const user = getUserById(req.session.userId);
+  if (!user) {
+    delete req.session.userId;
+    res.json({ user: null });
+    return;
+  }
+
+  res.json({ user: { email: user.email } });
 }
 
 module.exports = {
-  requireAuth,
-  handleLogin,
-  handleLogout,
-  handleMe,
+  requireAdminAuth,
+  requireUserAuth,
+  handleAdminLogin,
+  handleAdminLogout,
+  handleAdminMe,
+  handleUserLogin,
+  handleUserLogout,
+  handleUserMe,
 };

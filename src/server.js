@@ -11,13 +11,38 @@ const {
   isShortNameTaken,
   createFile,
   getFileByShortName,
-  incrementDownloadCount,
   createTempUpload,
   getTempUpload,
   deleteTempUpload,
 } = require('./db');
-const { requireAuth, handleLogin, handleLogout, handleMe } = require('./auth');
+const {
+  requireAdminAuth,
+  handleAdminLogin,
+  handleAdminLogout,
+  handleAdminMe,
+  handleUserLogin,
+  handleUserLogout,
+  handleUserMe,
+} = require('./auth');
 const { startCleanupScheduler, removeFileFromDisk } = require('./cleanup');
+const { hashSecret } = require('./password');
+const { parseAccessInput, parseDomainInput } = require('./access');
+const {
+  handleRegister,
+  handleChangePassword,
+  handleForgotPassword,
+  handleResetPassword,
+  handleRegisterInfo,
+  handleResetInfo,
+  requireUserAuth,
+} = require('./users');
+const {
+  handleFileInfo,
+  handleAuthorizeDownload,
+  handleDownloadFile,
+  shouldServeDownloadPage,
+  isFileAvailable,
+} = require('./download');
 
 fs.mkdirSync(config.uploadDir, { recursive: true });
 fs.mkdirSync(config.tempDir, { recursive: true });
@@ -69,7 +94,7 @@ function validateShortName(shortName) {
   if (!config.shortNamePattern.test(trimmed)) {
     return 'Имя может содержать только латинские буквы, цифры, _ и -';
   }
-  if (trimmed.toLowerCase() === 'api') {
+  if (['api', 'register', 'reset-password', 'account'].includes(trimmed.toLowerCase())) {
     return 'Это имя недоступно';
   }
   return null;
@@ -83,11 +108,21 @@ function parsePositiveInt(value, fieldName) {
   return { value: num };
 }
 
-app.post('/api/login', handleLogin);
-app.post('/api/logout', handleLogout);
-app.get('/api/me', handleMe);
+app.post('/api/login', handleAdminLogin);
+app.post('/api/logout', handleAdminLogout);
+app.get('/api/me', handleAdminMe);
 
-app.get('/api/check-name/:name', requireAuth, (req, res) => {
+app.post('/api/user/login', handleUserLogin);
+app.post('/api/user/logout', handleUserLogout);
+app.get('/api/user/me', handleUserMe);
+app.post('/api/user/register', handleRegister);
+app.get('/api/user/register-info', handleRegisterInfo);
+app.post('/api/user/change-password', requireUserAuth, handleChangePassword);
+app.post('/api/user/forgot-password', handleForgotPassword);
+app.post('/api/user/reset-password', handleResetPassword);
+app.get('/api/user/reset-info', handleResetInfo);
+
+app.get('/api/check-name/:name', requireAdminAuth, (req, res) => {
   const error = validateShortName(req.params.name);
   if (error) {
     res.json({ available: false, error });
@@ -103,7 +138,7 @@ app.get('/api/check-name/:name', requireAuth, (req, res) => {
   res.json({ available: true });
 });
 
-app.post('/api/upload-temp', requireAuth, (req, res) => {
+app.post('/api/upload-temp', requireAdminAuth, (req, res) => {
   uploadTemp.single('file')(req, res, (err) => {
     if (err) {
       const message =
@@ -134,8 +169,16 @@ app.post('/api/upload-temp', requireAuth, (req, res) => {
   });
 });
 
-app.post('/api/share', requireAuth, (req, res) => {
-  const { uploadId, shortName, maxDownloads, storageDays } = req.body || {};
+app.post('/api/share', requireAdminAuth, (req, res) => {
+  const {
+    uploadId,
+    shortName,
+    maxDownloads,
+    storageDays,
+    downloadPassword,
+    allowedEmails,
+    allowedDomains,
+  } = req.body || {};
 
   if (!uploadId) {
     res.status(400).json({ error: 'Загрузка не найдена' });
@@ -172,7 +215,22 @@ app.post('/api/share', requireAuth, (req, res) => {
     return;
   }
 
-  const finalPath = path.join(config.uploadDir, `${trimmedName}__${temp.original_name.replace(/[^\w.\-() ]/g, '_')}`);
+  const emailList = parseAccessInput(allowedEmails || '');
+  const domainList = parseDomainInput(allowedDomains || '');
+  let downloadPasswordHash = null;
+
+  if (downloadPassword && String(downloadPassword).trim()) {
+    if (String(downloadPassword).length < 4) {
+      res.status(400).json({ error: 'Пароль для скачивания — минимум 4 символа' });
+      return;
+    }
+    downloadPasswordHash = hashSecret(String(downloadPassword).trim());
+  }
+
+  const finalPath = path.join(
+    config.uploadDir,
+    `${trimmedName}__${temp.original_name.replace(/[^\w.\-() ]/g, '_')}`
+  );
   try {
     fs.renameSync(temp.stored_path, finalPath);
   } catch {
@@ -191,6 +249,9 @@ app.post('/api/share', requireAuth, (req, res) => {
       storedPath: finalPath,
       maxDownloads: downloadsParsed.value,
       expiresAt: expiresAtIso,
+      downloadPasswordHash,
+      allowedEmails: JSON.stringify(emailList),
+      allowedDomains: JSON.stringify(domainList),
     });
     deleteTempUpload(uploadId);
   } catch {
@@ -207,32 +268,20 @@ app.post('/api/share', requireAuth, (req, res) => {
     maxDownloads: downloadsParsed.value,
     storageDays: daysParsed.value,
     expiresAt: expiresAtIso,
+    hasDownloadPassword: Boolean(downloadPasswordHash),
+    allowedEmails: emailList,
+    allowedDomains: domainList,
   });
 });
 
-app.get('/api/file/:name', (req, res) => {
-  const file = getFileByShortName(req.params.name);
-  if (!file) {
-    res.status(404).json({ error: 'Файл не найден' });
-    return;
-  }
-
-  const expired = new Date(file.expires_at) <= new Date();
-  const exhausted = file.download_count >= file.max_downloads;
-
-  res.json({
-    shortName: file.short_name,
-    originalName: file.original_name,
-    maxDownloads: file.max_downloads,
-    downloadCount: file.download_count,
-    expiresAt: file.expires_at,
-    available: !expired && !exhausted,
-  });
-});
+app.get('/api/file/:name', handleFileInfo);
+app.post('/api/download/:name/authorize', handleAuthorizeDownload);
+app.get('/api/download/:name/file', handleDownloadFile);
 
 app.get('/:shortName', (req, res, next) => {
   const shortName = req.params.shortName;
-  if (shortName === 'api' || shortName.includes('.')) {
+  const reserved = ['api', 'register', 'reset-password', 'account'];
+  if (reserved.includes(shortName) || shortName.includes('.')) {
     next();
     return;
   }
@@ -243,14 +292,17 @@ app.get('/:shortName', (req, res, next) => {
     return;
   }
 
-  const expired = new Date(file.expires_at) <= new Date();
-  if (expired) {
+  if (!isFileAvailable(file)) {
+    if (file.download_count >= file.max_downloads) {
+      res.status(403).sendFile(path.join(__dirname, '..', 'public', 'limit.html'));
+      return;
+    }
     res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
     return;
   }
 
-  if (file.download_count >= file.max_downloads) {
-    res.status(403).sendFile(path.join(__dirname, '..', 'public', 'limit.html'));
+  if (shouldServeDownloadPage(file)) {
+    res.sendFile(path.join(__dirname, '..', 'public', 'download.html'));
     return;
   }
 
@@ -259,8 +311,8 @@ app.get('/:shortName', (req, res, next) => {
     return;
   }
 
+  const { incrementDownloadCount } = require('./db');
   incrementDownloadCount(file.id);
-
   res.download(file.stored_path, file.original_name);
 });
 

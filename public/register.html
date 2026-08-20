@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Регистрация</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <h1>Регистрация</h1>
+      <p id="register-info" class="hint"></p>
+      <form id="register-form">
+        <label>
+          Email
+          <input type="email" id="register-email" readonly>
+        </label>
+        <label>
+          Пароль
+          <input type="password" id="register-password" minlength="6" required>
+        </label>
+        <button type="submit">Зарегистрироваться</button>
+        <p id="register-error" class="error hidden"></p>
+        <p id="register-success" class="success hidden"></p>
+      </form>
+    </section>
+  </main>
+  <script src="/register.js"></script>
+</body>
+</html>

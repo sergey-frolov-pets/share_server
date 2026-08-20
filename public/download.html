@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Скачивание</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <h1 id="title">Скачивание файла</h1>
+      <p id="file-meta" class="hint"></p>
+
+      <div id="user-bar" class="user-bar hidden">
+        <span id="user-email"></span>
+        <button type="button" id="user-logout" class="link-btn">Выйти</button>
+      </div>
+
+      <form id="download-form" class="share-form hidden">
+        <label id="email-field" class="hidden">
+          Email
+          <input type="email" id="access-email" autocomplete="email">
+        </label>
+
+        <label id="user-password-field" class="hidden">
+          Пароль аккаунта
+          <input type="password" id="user-password" autocomplete="current-password">
+        </label>
+
+        <label id="download-password-field" class="hidden">
+          Пароль для скачивания
+          <input type="password" id="download-password" autocomplete="off">
+        </label>
+
+        <button type="submit" id="download-btn">Скачать</button>
+        <p id="download-error" class="error hidden"></p>
+        <p id="download-info" class="hint hidden"></p>
+      </form>
+
+      <div id="open-download" class="hidden">
+        <button type="button" id="direct-download-btn" class="primary-btn">Скачать файл</button>
+      </div>
+
+      <p class="hint">
+        <a href="/reset-password.html">Забыли пароль?</a>
+        · <a href="/account.html">Аккаунт</a>
+      </p>
+    </section>
+  </main>
+  <script src="/download.js"></script>
+</body>
+</html>

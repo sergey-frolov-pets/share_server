@@ -5,6 +5,7 @@ const {
   getStaleTempUploads,
   deleteFileRecord,
   deleteTempUpload,
+  deleteExpiredTokens,
 } = require('./db');
 
 const STALE_TEMP_HOURS = 24;
@@ -35,6 +36,8 @@ function cleanupExpiredAndExhausted() {
     removeFileFromDisk(temp.stored_path);
     deleteTempUpload(temp.id);
   }
+
+  deleteExpiredTokens();
 }
 
 function startCleanupScheduler(intervalMs) {

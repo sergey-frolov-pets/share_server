@@ -15,6 +15,9 @@ db.exec(`
     max_downloads INTEGER NOT NULL,
     download_count INTEGER NOT NULL DEFAULT 0,
     expires_at TEXT NOT NULL,
+    download_password_hash TEXT,
+    allowed_emails TEXT NOT NULL DEFAULT '[]',
+    allowed_domains TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -24,7 +27,40 @@ db.exec(`
     stored_path TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    type TEXT NOT NULL,
+    email TEXT NOT NULL,
+    short_name TEXT,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+function migrateFilesTable() {
+  const columns = db.prepare('PRAGMA table_info(files)').all().map((col) => col.name);
+  if (!columns.includes('download_password_hash')) {
+    db.exec('ALTER TABLE files ADD COLUMN download_password_hash TEXT');
+  }
+  if (!columns.includes('allowed_emails')) {
+    db.exec("ALTER TABLE files ADD COLUMN allowed_emails TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!columns.includes('allowed_domains')) {
+    db.exec("ALTER TABLE files ADD COLUMN allowed_domains TEXT NOT NULL DEFAULT '[]'");
+  }
+}
+
+migrateFilesTable();
 
 function isShortNameTaken(shortName) {
   const row = db.prepare('SELECT 1 FROM files WHERE short_name = ?').get(shortName);
@@ -33,8 +69,14 @@ function isShortNameTaken(shortName) {
 
 function createFile(record) {
   db.prepare(`
-    INSERT INTO files (short_name, original_name, stored_path, max_downloads, expires_at)
-    VALUES (@shortName, @originalName, @storedPath, @maxDownloads, @expiresAt)
+    INSERT INTO files (
+      short_name, original_name, stored_path, max_downloads, expires_at,
+      download_password_hash, allowed_emails, allowed_domains
+    )
+    VALUES (
+      @shortName, @originalName, @storedPath, @maxDownloads, @expiresAt,
+      @downloadPasswordHash, @allowedEmails, @allowedDomains
+    )
   `).run(record);
 }
 
@@ -80,6 +122,47 @@ function getStaleTempUploads(hoursOld) {
   `).all(hoursOld);
 }
 
+function getUserByEmail(email) {
+  return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+}
+
+function getUserById(id) {
+  return db.prepare('SELECT id, email, created_at FROM users WHERE id = ?').get(id);
+}
+
+function createUser(email, passwordHash) {
+  const result = db.prepare(`
+    INSERT INTO users (email, password_hash)
+    VALUES (?, ?)
+  `).run(email, passwordHash);
+  return result.lastInsertRowid;
+}
+
+function updateUserPassword(userId, passwordHash) {
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, userId);
+}
+
+function createToken(record) {
+  db.prepare(`
+    INSERT INTO tokens (token, type, email, short_name, expires_at)
+    VALUES (@token, @type, @email, @shortName, @expiresAt)
+  `).run(record);
+}
+
+function getToken(tokenValue) {
+  return db.prepare('SELECT * FROM tokens WHERE token = ?').get(tokenValue);
+}
+
+function markTokenUsed(tokenValue) {
+  db.prepare(`
+    UPDATE tokens SET used_at = datetime('now') WHERE token = ?
+  `).run(tokenValue);
+}
+
+function deleteExpiredTokens() {
+  db.prepare('DELETE FROM tokens WHERE expires_at <= datetime(\'now\') OR used_at IS NOT NULL').run();
+}
+
 module.exports = {
   db,
   isShortNameTaken,
@@ -93,4 +176,12 @@ module.exports = {
   getTempUpload,
   deleteTempUpload,
   getStaleTempUploads,
+  getUserByEmail,
+  getUserById,
+  createUser,
+  updateUserPassword,
+  createToken,
+  getToken,
+  markTokenUsed,
+  deleteExpiredTokens,
 };

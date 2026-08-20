@@ -14,6 +14,9 @@ const namePreview = document.getElementById('name-preview');
 const nameError = document.getElementById('name-error');
 const maxDownloadsInput = document.getElementById('max-downloads');
 const storageDaysInput = document.getElementById('storage-days');
+const downloadPasswordInput = document.getElementById('download-password');
+const allowedEmailsInput = document.getElementById('allowed-emails');
+const allowedDomainsInput = document.getElementById('allowed-domains');
 const shareBtn = document.getElementById('share-btn');
 const shareError = document.getElementById('share-error');
 const result = document.getElementById('result');
@@ -95,6 +98,9 @@ function resetUploadState() {
   shortNameInput.value = '';
   maxDownloadsInput.value = '2';
   storageDaysInput.value = '2';
+  downloadPasswordInput.value = '';
+  allowedEmailsInput.value = '';
+  allowedDomainsInput.value = '';
   updateNamePreview();
   uploadStatusEl.textContent = '';
   uploadStatusEl.className = 'status';
@@ -215,6 +221,9 @@ shareForm.addEventListener('submit', async (e) => {
         shortName: shortNameInput.value.trim(),
         maxDownloads: maxDownloadsInput.value,
         storageDays: storageDaysInput.value,
+        downloadPassword: downloadPasswordInput.value,
+        allowedEmails: allowedEmailsInput.value,
+        allowedDomains: allowedDomainsInput.value,
       }),
     });
 

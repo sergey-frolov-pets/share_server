@@ -20,4 +20,10 @@ module.exports = {
   shortNameMaxLength: SHORT_NAME_MAX_LENGTH,
   shortNamePattern: SHORT_NAME_PATTERN,
   cleanupIntervalMs: 60 * 60 * 1000,
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: parseInt(process.env.SMTP_PORT || '587', 10),
+  smtpSecure: process.env.SMTP_SECURE === 'true',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || 'share@localhost',
 };

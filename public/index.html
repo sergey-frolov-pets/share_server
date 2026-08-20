@@ -60,6 +60,21 @@
         </label>
       </div>
 
+      <label>
+        Пароль для скачивания (опционально)
+        <input type="password" id="download-password" autocomplete="new-password" placeholder="не задан">
+      </label>
+
+      <label>
+        Доступ: email (через запятую или с новой строки)
+        <textarea id="allowed-emails" rows="2" placeholder="user@example.com, friend@vk.ru"></textarea>
+      </label>
+
+      <label>
+        Доступ: домены (например vk.ru)
+        <textarea id="allowed-domains" rows="2" placeholder="vk.ru, company.com"></textarea>
+      </label>
+
       <button type="submit" id="share-btn">Создать ссылку</button>
       <p id="share-error" class="error hidden"></p>
     </form>
