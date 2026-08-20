@@ -87,7 +87,6 @@ let editingShortName = null;
 let lastUploadQueueSnapshot = null;
 let lastFileRestoreState = null;
 let pickingFiles = false;
-let pickTargetQueueId = null;
 
 function initIconButtons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((btn) => {
@@ -314,31 +313,10 @@ function formatQueueItemBadge(item) {
   return null;
 }
 
-function buildQueueItemToolbar(item) {
-  const parts = [];
-
-  if (item.status === 'remote') {
-    parts.push(`<button type="button" class="queue-tool-btn queue-pick-file-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('upload', 14)}</span><span>Выбрать файл</span></button>`);
-  } else if (['uploading', 'pending'].includes(item.status)) {
-    parts.push(`<button type="button" class="queue-tool-btn queue-pause-item-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('pause', 14)}</span><span>Пауза</span></button>`);
-  } else if (item.status === 'paused') {
-    parts.push(`<button type="button" class="queue-tool-btn queue-resume-item-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('play', 14)}</span><span>Продолжить</span></button>`);
-  }
-
-  if (item.status === 'ready') {
-    parts.push(`<button type="button" class="queue-tool-btn queue-select-btn" data-queue-id="${item.id}" title="Создать ссылку"><span class="queue-tool-icon">${AppIcons.icon('link', 14)}</span><span>Ссылка</span></button>`);
-  }
-
-  if (['pending', 'uploading', 'paused', 'ready', 'remote'].includes(item.status)) {
-    parts.push(`<button type="button" class="queue-tool-btn queue-tool-btn--danger queue-cancel-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('cancel', 14)}</span><span>Убрать</span></button>`);
-  }
-
-  return parts.length ? `<div class="upload-queue-item-toolbar">${parts.join('')}</div>` : '';
-}
-
 function buildUploadQueueItemHtml(item) {
   const activeClass = item.status === 'uploading' ? ' active' : '';
   const statusClass = ` upload-queue-item--${item.status}`;
+  const clickableClass = item.status === 'ready' ? ' upload-queue-item--clickable' : '';
   const badge = formatQueueItemBadge(item);
   const badgeHtml = badge
     ? `<span class="upload-queue-badge upload-queue-badge--${badge.className}">${escapeHtml(badge.text)}</span>`
@@ -354,10 +332,9 @@ function buildUploadQueueItemHtml(item) {
   const progressDetailHtml = progressDetail
     ? `<div class="upload-queue-item-progress-meta">${escapeHtml(progressDetail)}</div>`
     : '';
-  const toolbarHtml = buildQueueItemToolbar(item);
 
   return `
-    <li class="upload-queue-item${activeClass}${statusClass}" data-queue-id="${item.id}" data-status="${item.status}">
+    <li class="upload-queue-item${activeClass}${statusClass}${clickableClass}" data-queue-id="${item.id}" data-status="${item.status}">
       <div class="upload-queue-item-row">
         <div class="upload-queue-item-text">
           <div class="upload-queue-item-title-row">
@@ -371,31 +348,15 @@ function buildUploadQueueItemHtml(item) {
       </div>
       ${progressDetailHtml}
       ${progressHtml}
-      ${toolbarHtml}
       ${errorHtml}
     </li>
   `;
 }
 
 function bindUploadQueueItemEvents(root = uploadQueueList) {
-  root.querySelectorAll('.queue-select-btn').forEach((btn) => {
-    btn.addEventListener('click', () => uploadQueue.setActiveItem(btn.dataset.queueId));
+  root.querySelectorAll('.upload-queue-item--ready').forEach((row) => {
+    row.addEventListener('click', () => uploadQueue.setActiveItem(row.dataset.queueId));
   });
-  root.querySelectorAll('.queue-cancel-btn').forEach((btn) => {
-    btn.addEventListener('click', () => uploadQueue.cancelItem(btn.dataset.queueId));
-  });
-  root.querySelectorAll('.queue-pause-item-btn').forEach((btn) => {
-    btn.addEventListener('click', () => uploadQueue.pauseItem(btn.dataset.queueId));
-  });
-  root.querySelectorAll('.queue-resume-item-btn').forEach((btn) => {
-    btn.addEventListener('click', () => uploadQueue.resumeItem(btn.dataset.queueId));
-  });
-  root.querySelectorAll('.queue-pick-file-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      pickFileForUpload(btn.dataset.queueId).catch(() => {});
-    });
-  });
-  initIconButtons(root);
 }
 
 function isUploadQueueProgressOnlyUpdate(prev, state) {
@@ -418,7 +379,7 @@ function updateUploadQueueResumeHint(state, restoreState = lastFileRestoreState)
   if (!uploadQueueResumeHint || !uploadQueueResumeText) return;
 
   const needsReselect = state.items.some((item) => (
-    item.sessionId && !item.file && ['remote', 'paused'].includes(item.status)
+    item.sessionId && !item.file && item.status === 'paused'
   ));
   const isUploading = state.items.some((item) => item.status === 'uploading');
 
@@ -431,12 +392,12 @@ function updateUploadQueueResumeHint(state, restoreState = lastFileRestoreState)
   show(uploadQueueResumeHint);
 
   if (restoreState?.pendingPermission > 0) {
-    uploadQueueResumeText.textContent = 'Файлы сохранены в браузере. Нажмите «Возобновить загрузку» или «Выбрать файл» у нужной строки.';
+    uploadQueueResumeText.textContent = 'Разрешите доступ к файлам или выберите их в зоне выше — загрузка продолжится автоматически.';
     if (uploadQueueResumeBtn) show(uploadQueueResumeBtn);
     return;
   }
 
-  uploadQueueResumeText.textContent = 'Нажмите «Выбрать файл» у нужной строки в очереди — по одному.';
+  uploadQueueResumeText.textContent = 'Выберите тот же файл в зоне выше — загрузка продолжится автоматически.';
   if (uploadQueueResumeBtn) hide(uploadQueueResumeBtn);
 }
 
@@ -450,24 +411,24 @@ async function tryRestoreStoredFiles(allowRequest = false) {
   return result;
 }
 
-async function ingestFileForUpload(file, handle = null, targetItemId = null) {
+async function ingestFileForUpload(file, handle = null) {
   if (!file) return false;
-
-  const queueId = targetItemId || pickTargetQueueId;
-  pickTargetQueueId = null;
 
   if (global.FileHandleStore?.saveHandle && handle) {
     await global.FileHandleStore.saveHandle(file, handle);
   }
 
-  const added = uploadQueue.addFile(file, queueId || null);
+  const added = uploadQueue.addFile(file);
   if (added) {
     show(uploadQueueEl);
     hide(result);
     setMessage(shareError, null);
     updateDropZoneHintForQueue();
-  } else if (queueId) {
-    setMessage(shareError, 'Выбран другой файл — нужен тот же, что в очереди', 'error');
+  } else {
+    const waiting = uploadQueue.getWaitingForFileItems?.() || [];
+    if (waiting.length) {
+      setMessage(shareError, 'Выберите тот же файл, что в очереди — загрузка продолжится автоматически', 'error');
+    }
   }
   return added;
 }
@@ -520,32 +481,23 @@ async function fileFromDropEvent(event) {
   };
 }
 
-async function pickFileForUpload(targetItemId = null) {
+async function pickFileForUpload() {
   if (pickingFiles) return;
   pickingFiles = true;
-  pickTargetQueueId = targetItemId || null;
   try {
     if (typeof window.showOpenFilePicker === 'function') {
       try {
         const [handle] = await window.showOpenFilePicker({ multiple: false });
         const file = await handle.getFile();
-        await ingestFileForUpload(file, handle, targetItemId);
+        await ingestFileForUpload(file, handle);
         return;
       } catch (err) {
-        if (err?.name === 'AbortError') {
-          pickTargetQueueId = null;
-          return;
-        }
+        if (err?.name === 'AbortError') return;
       }
     }
 
     const onWindowFocus = () => {
       window.removeEventListener('focus', onWindowFocus);
-      setTimeout(() => {
-        if (!fileInput.files?.length) {
-          pickTargetQueueId = null;
-        }
-      }, 300);
     };
     window.addEventListener('focus', onWindowFocus);
     fileInput.click();
@@ -660,9 +612,9 @@ async function restoreActiveUploads() {
     if (uploadQueue.syncSessionsFromServer(sessions)) {
       show(uploadQueueEl);
     }
+    await uploadQueue.pauseSessionsWithoutFile();
     const restoreResult = await tryRestoreStoredFiles(false);
     updateDropZoneHintForQueue();
-    const hasRemote = uploadQueue.hasRemoteSessionsWaitingForFile?.();
   } catch (_err) {
     // ignore restore errors on load
   }
@@ -672,10 +624,10 @@ function updateDropZoneHintForQueue() {
   const dropHint = dropZone.querySelector('.hint');
   if (!dropHint) return;
 
-  const next = uploadQueue.getNextWaitingRemote?.();
+  const next = uploadQueue.getNextWaitingForFile?.() || uploadQueue.getNextWaitingRemote?.();
   if (next) {
     const name = next.name.length > 40 ? `${next.name.slice(0, 37)}…` : next.name;
-    dropHint.textContent = `выберите один файл: ${name}`;
+    dropHint.textContent = `выберите тот же файл: ${name}`;
     return;
   }
 
@@ -685,7 +637,7 @@ function updateDropZoneHintForQueue() {
 function resetDropZoneHint() {
   const dropHint = dropZone.querySelector('.hint');
   if (dropHint) {
-    dropHint.textContent = 'или нажмите — один файл за раз, до 3 параллельно';
+    dropHint.textContent = 'или нажмите — выберите тот же файл, чтобы продолжить загрузку';
   }
 }
 
@@ -1029,10 +981,8 @@ dropZone.addEventListener('drop', (e) => {
 
 fileInput.addEventListener('change', () => {
   const file = fileInput.files?.[0];
-  const queueId = pickTargetQueueId;
-  pickTargetQueueId = null;
   if (file) {
-    ingestFileForUpload(file, null, queueId).catch(() => {});
+    ingestFileForUpload(file, null).catch(() => {});
   }
   fileInput.value = '';
 });
