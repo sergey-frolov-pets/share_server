@@ -56,6 +56,7 @@ const {
   isDownloadAllowed,
   isLinkExhausted,
 } = require('./download');
+const { handleRandomName } = require('./randomName');
 
 fs.mkdirSync(config.uploadDir, { recursive: true });
 fs.mkdirSync(config.tempDir, { recursive: true });
@@ -126,6 +127,8 @@ app.post('/api/user/change-password', requireUserAuth, handleChangePassword);
 app.post('/api/user/forgot-password', handleForgotPassword);
 app.post('/api/user/reset-password', handleResetPassword);
 app.get('/api/user/reset-info', handleResetInfo);
+
+app.get('/api/random-name', requireAdminAuth, handleRandomName);
 
 app.get('/api/check-name/:name', requireAdminAuth, (req, res) => {
   const error = validateShortName(req.params.name);
@@ -206,6 +209,8 @@ app.get('/api/user/upload-quota', requireUserAuth, (req, res) => {
   const { formatUserUploadInfo } = require('./uploadQuota');
   res.json(formatUserUploadInfo(user));
 });
+
+app.get('/api/user/random-name', requireUserAuth, handleRandomName);
 
 app.get('/api/user/check-name/:name', requireUserAuth, (req, res) => {
   const error = validateShortName(req.params.name);
