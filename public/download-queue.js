@@ -33,7 +33,19 @@
       };
     }
 
-    notify() {
+    notify(immediate = true) {
+      if (!immediate) {
+        if (this._notifyTimer) return;
+        this._notifyTimer = setTimeout(() => {
+          this._notifyTimer = null;
+          this.onChange(this.getState());
+        }, 250);
+        return;
+      }
+      if (this._notifyTimer) {
+        clearTimeout(this._notifyTimer);
+        this._notifyTimer = null;
+      }
       this.onChange(this.getState());
     }
 

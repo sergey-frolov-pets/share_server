@@ -145,6 +145,26 @@ button[type="submit"]:disabled {
   font-size: 0.875rem;
 }
 
+.share-file-label {
+  margin: 0 0 12px;
+  font-size: 0.875rem;
+}
+
+.share-advanced {
+  margin: 12px 0;
+}
+
+.share-advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.875rem;
+  user-select: none;
+}
+
+.share-advanced .fieldset {
+  margin-top: 12px;
+}
+
 .file-info {
   margin-top: 16px;
   padding: 12px;
@@ -565,6 +585,25 @@ button[type="submit"]:disabled {
   justify-content: space-between;
   gap: 10px;
   font-size: 0.875rem;
+  min-width: 0;
+}
+
+.upload-queue-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.upload-queue-item-status {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.upload-queue-item-error {
+  color: var(--error);
 }
 
 .upload-queue-item-meta {
