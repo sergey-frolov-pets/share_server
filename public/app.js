@@ -310,19 +310,16 @@ function formatQueueItemBadge(item) {
 }
 
 function buildUploadQueueItemHtml(item, currentItemId) {
-  const activeClass = item.id === currentItemId ? ' active' : '';
+  const activeClass = item.status === 'uploading' ? ' active' : '';
   const statusClass = ` upload-queue-item--${item.status}`;
   const badge = formatQueueItemBadge(item);
   const badgeHtml = badge
     ? `<span class="upload-queue-badge upload-queue-badge--${badge.className}">${escapeHtml(badge.text)}</span>`
     : '';
-  const progressHtml = ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
-    ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
-    : '';
   const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
 
   let controlBtn = '';
-  if (item.status === 'uploading' || (item.status === 'pending' && item.file)) {
+  if (item.status === 'uploading' || item.status === 'pending') {
     controlBtn = AppIcons.iconButton('pause', {
       className: 'btn-secondary queue-pause-item-btn',
       title: 'Пауза',
@@ -334,7 +331,18 @@ function buildUploadQueueItemHtml(item, currentItemId) {
       title: 'Продолжить',
       attrs: `data-queue-id="${item.id}"`,
     });
+  } else if (item.status === 'remote') {
+    controlBtn = AppIcons.iconButton('pause', {
+      className: 'btn-secondary queue-pause-item-btn',
+      title: 'Пауза на сервере',
+      attrs: `data-queue-id="${item.id}"`,
+    });
   }
+
+  const progressClass = item.status === 'uploading' ? '' : ' upload-queue-item-progress--idle';
+  const progressHtml = ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
+    ? `<div class="upload-queue-item-progress${progressClass}"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
+    : '';
 
   const actionsHtml = [
     item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : '',
