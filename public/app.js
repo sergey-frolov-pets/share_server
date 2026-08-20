@@ -624,21 +624,32 @@ function updateDropZoneHintForQueue() {
   const dropHint = dropZone.querySelector('.hint');
   if (!dropHint) return;
 
-  const next = uploadQueue.getNextWaitingForFile?.() || uploadQueue.getNextWaitingRemote?.();
-  if (next) {
-    const name = next.name.length > 40 ? `${next.name.slice(0, 37)}…` : next.name;
+  const waiting = uploadQueue.getWaitingForFileItems?.() || [];
+  if (!waiting.length) {
+    resetDropZoneHint();
+    return;
+  }
+
+  if (waiting.length === 1) {
+    const name = waiting[0].name.length > 40 ? `${waiting[0].name.slice(0, 37)}…` : waiting[0].name;
     dropHint.textContent = `выберите тот же файл: ${name}`;
     return;
   }
 
-  resetDropZoneHint();
+  dropHint.textContent = `выберите файлы из очереди (${waiting.length}) — по одному, тот же файл`;
 }
 
 function resetDropZoneHint() {
   const dropHint = dropZone.querySelector('.hint');
-  if (dropHint) {
-    dropHint.textContent = 'или нажмите — выберите тот же файл, чтобы продолжить загрузку';
+  if (!dropHint) return;
+
+  const waiting = uploadQueue.getWaitingForFileItems?.() || [];
+  if (waiting.length) {
+    updateDropZoneHintForQueue();
+    return;
   }
+
+  dropHint.textContent = 'или нажмите — один файл за раз, до 3 параллельно';
 }
 
 function enqueueFile(file) {
@@ -956,7 +967,12 @@ storageLimitForm.addEventListener('submit', async (e) => {
 });
 
 dropZone.addEventListener('click', () => {
-  pickFileForUpload().catch(() => {});
+  tryRestoreStoredFiles(true)
+    .then((result) => {
+      if (result.restored > 0) return;
+      return pickFileForUpload();
+    })
+    .catch(() => pickFileForUpload().catch(() => {}));
 });
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
