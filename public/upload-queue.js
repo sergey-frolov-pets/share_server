@@ -436,7 +436,6 @@
       }
 
       if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
-        item.status = 'pending';
         this.notify();
         return true;
       }
@@ -460,11 +459,6 @@
     attachRemoteFile(file) {
       const match = this.findRemoteMatchForFile(file);
       if (!match) return false;
-
-      if (this.isSessionAlreadyUploading(match.sessionId, match.id)) {
-        return true;
-      }
-
       return this.reattachFileToItem(match, file);
     }
 
@@ -516,7 +510,7 @@
       }
 
       const waiting = this.getWaitingForFileItems();
-      if (waiting.length) {
+      if (waiting.some((item) => fileMatchesItem(file, item))) {
         return false;
       }
 
