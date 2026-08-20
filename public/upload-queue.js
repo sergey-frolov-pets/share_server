@@ -64,7 +64,10 @@
   }
 
   function fileMatchesItem(file, item) {
-    return item.name === file.name && item.size === file.size;
+    if (!file || !item) return false;
+    const fileName = file.name || '';
+    const itemName = item.name || '';
+    return fileName === itemName && Number(item.size) === Number(file.size);
   }
 
   function sessionToItem(session) {
@@ -131,7 +134,7 @@
 
     getWaitingForFileItems() {
       return this.items.filter((item) => (
-        !item.file && item.sessionId && item.status === 'paused'
+        !item.file && item.sessionId && ['paused', 'error'].includes(item.status)
       ));
     }
 
@@ -363,7 +366,6 @@
         throw new Error(data.error || 'Ошибка запроса');
       }
       this.syncSessionsFromServer(data.sessions || []);
-      await this.pauseSessionsWithoutFile();
     }
 
     getNextWaitingForFile() {
@@ -404,9 +406,9 @@
       return this.items.find((item) => (
         item.sessionId
         && fileMatchesItem(file, item)
-        && item.status === 'paused'
-        && !item.file
-        && !this.isSessionAlreadyUploading(item.sessionId, item.id)
+        && !['ready', 'shared', 'cancelled', 'uploading'].includes(item.status)
+        && !this.uploaders.has(item.id)
+        && (!item.file || item.status === 'paused' || item.status === 'error')
       )) || null;
     }
 
@@ -424,7 +426,7 @@
 
       if (item.status === 'ready') return true;
 
-      if ((item.status === 'uploading' || this.uploaders.has(item.id)) && item.file) {
+      if (this.uploaders.has(item.id) && item.file) {
         return true;
       }
 
@@ -435,21 +437,13 @@
         sessionStorage.setItem(storageKey(this.apiPrefix, file), item.sessionId);
       }
 
-      if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
-        this.notify();
-        return true;
-      }
-
-      if (['paused', 'error'].includes(item.status)) {
+      if (['paused', 'error', 'pending'].includes(item.status)) {
         this.startItemUpload(item);
         return true;
       }
 
-      if (item.status === 'pending') {
-        if (!this.uploaders.has(item.id)) {
-          this.start();
-        }
-        this.notify();
+      if (item.sessionId && item.file) {
+        this.startItemUpload(item);
         return true;
       }
 
@@ -794,6 +788,18 @@
         sessionStorage.setItem(storageKey(this.apiPrefix, item.file), item.sessionId);
       }
 
+      if (item.sessionId && item.serverStatus === 'paused') {
+        try {
+          await this.fetchFn(`${this.apiPrefix}/resume/${item.sessionId}`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+          });
+          item.serverStatus = 'active';
+        } catch (_err) {
+          // init/resume below may still succeed
+        }
+      }
+
       const uploader = new global.ChunkUploader({
         apiPrefix: this.apiPrefix,
         fetchFn: this.fetchFn,
@@ -803,12 +809,6 @@
       uploader.setHandlers({
         onSession: (session) => {
           if (!session?.sessionId || !item.file) return;
-          if (item.sessionId && session.sessionId !== item.sessionId && session.resumed !== true) {
-            this.fetchFn(`${this.apiPrefix}/cancel/${session.sessionId}`, {
-              method: 'DELETE',
-            }).catch(() => {});
-            return;
-          }
           item.sessionId = session.sessionId;
           sessionStorage.setItem(storageKey(this.apiPrefix, item.file), session.sessionId);
           if (global.FileHandleStore?.linkSession) {
