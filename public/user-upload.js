@@ -122,6 +122,7 @@ shareForm.addEventListener('submit', async (e) => {
         uploadId,
         shortName: shortNameInput.value.trim(),
         downloadPassword: document.getElementById('user-download-password').value,
+        description: document.getElementById('user-file-description').value,
         ...limitsPayload(),
       }),
     });

@@ -41,6 +41,19 @@ function parseDownloadPassword(downloadPassword) {
   return { hash: hashSecret(String(downloadPassword).trim()) };
 }
 
+const DESCRIPTION_MAX_LENGTH = 2000;
+
+function parseDescription(raw) {
+  if (raw === undefined || raw === null) return { value: null };
+  if (typeof raw !== 'string') return { error: 'Некорректное описание' };
+  const trimmed = raw.trim();
+  if (!trimmed) return { value: null };
+  if (trimmed.length > DESCRIPTION_MAX_LENGTH) {
+    return { error: `Описание не длиннее ${DESCRIPTION_MAX_LENGTH} символов` };
+  }
+  return { value: trimmed };
+}
+
 function parseAccessLists(body) {
   return {
     emails: parseAccessInput(body.allowedEmails || ''),
@@ -147,6 +160,12 @@ function handleCreateShare(req, res, validateShortName) {
   }
 
   const access = parseAccessLists(body);
+  const descriptionParsed = parseDescription(body.description);
+  if (descriptionParsed.error) {
+    res.status(400).json({ error: descriptionParsed.error });
+    return;
+  }
+
   const finalized = finalizeTempUpload(temp, trimmedName);
   if (finalized.error) {
     res.status(500).json({ error: finalized.error });
@@ -164,6 +183,7 @@ function handleCreateShare(req, res, validateShortName) {
       deleteAt: fileLimits.expiresAt,
       ownerUserId,
       fileSizeBytes,
+      description: descriptionParsed.value,
     });
 
     createLink({
@@ -188,6 +208,7 @@ function handleCreateShare(req, res, validateShortName) {
     hasDownloadPassword: Boolean(passwordParsed.hash),
     allowedEmails: access.emails,
     allowedDomains: access.domains,
+    description: descriptionParsed.value,
   }));
 }
 
@@ -211,6 +232,7 @@ function handleGetShare(req, res) {
     allowedEmails: JSON.parse(row.allowed_emails || '[]'),
     allowedDomains: JSON.parse(row.allowed_domains || '[]'),
     updatedAt: row.link_updated_at,
+    description: row.description || null,
   });
 }
 
@@ -236,6 +258,16 @@ function handleUpdateShare(req, res, validateShortName) {
   }
 
   const access = parseAccessLists(body);
+  let description = row.description || null;
+  if (body.description !== undefined) {
+    const descriptionParsed = parseDescription(body.description);
+    if (descriptionParsed.error) {
+      res.status(400).json({ error: descriptionParsed.error });
+      return;
+    }
+    description = descriptionParsed.value;
+  }
+
   const { linkLimits, fileLimits } = limitsParsed;
 
   let newShortName = currentName;
@@ -276,6 +308,7 @@ function handleUpdateShare(req, res, validateShortName) {
       deleteAt: fileLimits.expiresAt,
       ownerUserId: row.owner_user_id || null,
       fileSizeBytes: getFileSizeBytes(finalized.finalPath, temp.file_size),
+      description,
     });
 
     storedFileId = newStoredId;
@@ -286,6 +319,7 @@ function handleUpdateShare(req, res, validateShortName) {
     updateStoredFileLimits(storedFileId, {
       deleteMaxDownloads: fileLimits.maxDownloads,
       deleteAt: fileLimits.expiresAt,
+      description,
     });
   }
 
@@ -314,6 +348,7 @@ function handleUpdateShare(req, res, validateShortName) {
     allowedDomains: access.domains,
     originalName,
     linkDownloadCount: resetLinkCount ? 0 : row.link_download_count,
+    description,
   }));
 }
 

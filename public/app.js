@@ -30,6 +30,7 @@ const linkDaysInput = document.getElementById('link-days');
 const fileMaxDownloadsInput = document.getElementById('file-max-downloads');
 const fileDaysInput = document.getElementById('file-days');
 const downloadPasswordInput = document.getElementById('download-password');
+const fileDescriptionInput = document.getElementById('file-description');
 const allowedEmailsInput = document.getElementById('allowed-emails');
 const allowedDomainsInput = document.getElementById('allowed-domains');
 const shareBtn = document.getElementById('share-btn');
@@ -54,6 +55,7 @@ const updateLinkDaysInput = document.getElementById('update-link-days');
 const updateFileMaxDownloadsInput = document.getElementById('update-file-max-downloads');
 const updateFileDaysInput = document.getElementById('update-file-days');
 const updateDownloadPasswordInput = document.getElementById('update-download-password');
+const updateFileDescriptionInput = document.getElementById('update-file-description');
 const updateAllowedEmailsInput = document.getElementById('update-allowed-emails');
 const updateAllowedDomainsInput = document.getElementById('update-allowed-domains');
 const resetLinkCountInput = document.getElementById('reset-link-count');
@@ -159,6 +161,7 @@ function resetCreateState() {
   fileMaxDownloadsInput.value = '';
   fileDaysInput.value = '';
   downloadPasswordInput.value = '';
+  fileDescriptionInput.value = '';
   allowedEmailsInput.value = '';
   allowedDomainsInput.value = '';
   updateNamePreview();
@@ -429,6 +432,7 @@ shareForm.addEventListener('submit', async (e) => {
         uploadId: currentUploadId,
         shortName: shortNameInput.value.trim(),
         downloadPassword: downloadPasswordInput.value,
+        description: fileDescriptionInput.value,
         allowedEmails: allowedEmailsInput.value,
         allowedDomains: allowedDomainsInput.value,
         ...buildLimitPayload(
@@ -475,6 +479,7 @@ loadLinkForm.addEventListener('submit', async (e) => {
     updateFileDaysInput.value = daysFromExpires(data.fileDeleteAt);
     updateAllowedEmailsInput.value = (data.allowedEmails || []).join(', ');
     updateAllowedDomainsInput.value = (data.allowedDomains || []).join(', ');
+    updateFileDescriptionInput.value = data.description || '';
     updateDownloadPasswordInput.value = '';
     newShortNameInput.value = '';
     resetLinkCountInput.checked = true;
@@ -517,6 +522,7 @@ updateForm.addEventListener('submit', async (e) => {
     if (updateDownloadPasswordInput.value) {
       body.downloadPassword = updateDownloadPasswordInput.value;
     }
+    body.description = updateFileDescriptionInput.value;
 
     if (updateUploadId) {
       body.uploadId = updateUploadId;

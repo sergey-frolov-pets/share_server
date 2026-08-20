@@ -5,6 +5,7 @@ function getShortNameFromPath() {
 
 const shortName = getShortNameFromPath();
 const title = document.getElementById('title');
+const fileDescription = document.getElementById('file-description');
 const fileMeta = document.getElementById('file-meta');
 const userBar = document.getElementById('user-bar');
 const userEmailEl = document.getElementById('user-email');
@@ -82,6 +83,12 @@ function renderForm() {
   if (!fileInfo) return;
 
   title.textContent = fileInfo.originalName;
+  if (fileInfo.description) {
+    fileDescription.textContent = fileInfo.description;
+    show(fileDescription);
+  } else {
+    hide(fileDescription);
+  }
   fileMeta.textContent = [
     `Ссылка: ${fileInfo.linkDownloadCount}/${fileInfo.linkMaxDownloads ?? '∞'}`,
     `Файл: ${fileInfo.fileDownloadCount}/${fileInfo.fileMaxDownloads ?? '∞'}`,

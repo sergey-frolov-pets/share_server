@@ -74,6 +74,7 @@ function buildFileInfo(row) {
     fileDeleteAt: row.delete_at,
     available: isDownloadAllowed(row),
     linkAvailable: isLinkAvailable(row),
+    description: row.description || null,
     requiresDownloadPassword: fileHasDownloadPassword(row),
     requiresAccess: fileHasAccessRestrictions(row),
     hasGates: fileHasGates(row),

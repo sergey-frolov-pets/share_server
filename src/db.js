@@ -145,6 +145,10 @@ function migrateOwnershipAndUploadColumns() {
   if (!tempCols.includes('file_size')) {
     db.exec('ALTER TABLE temp_uploads ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0');
   }
+
+  if (!fileCols.includes('description')) {
+    db.exec('ALTER TABLE stored_files ADD COLUMN description TEXT');
+  }
 }
 
 migrateOwnershipAndUploadColumns();
@@ -286,11 +290,11 @@ function createStoredFile(record) {
   const result = db.prepare(`
     INSERT INTO stored_files (
       stored_path, original_name, delete_max_downloads, delete_at,
-      owner_user_id, file_size_bytes
+      owner_user_id, file_size_bytes, description
     )
     VALUES (
       @storedPath, @originalName, @deleteMaxDownloads, @deleteAt,
-      @ownerUserId, @fileSizeBytes
+      @ownerUserId, @fileSizeBytes, @description
     )
   `).run(record);
   return result.lastInsertRowid;
@@ -303,9 +307,16 @@ function getStoredFileById(id) {
 function updateStoredFileLimits(id, record) {
   db.prepare(`
     UPDATE stored_files
-    SET delete_max_downloads = @deleteMaxDownloads, delete_at = @deleteAt
+    SET delete_max_downloads = @deleteMaxDownloads,
+        delete_at = @deleteAt,
+        description = @description
     WHERE id = @id
-  `).run({ id, ...record });
+  `).run({
+    id,
+    deleteMaxDownloads: record.deleteMaxDownloads,
+    deleteAt: record.deleteAt,
+    description: record.description,
+  });
 }
 
 function updateStoredFilePath(id, storedPath, originalName, limits) {
@@ -313,7 +324,7 @@ function updateStoredFilePath(id, storedPath, originalName, limits) {
     UPDATE stored_files
     SET stored_path = @storedPath, original_name = @originalName,
         total_download_count = 0, delete_max_downloads = @deleteMaxDownloads,
-        delete_at = @deleteAt
+        delete_at = @deleteAt, description = @description
     WHERE id = @id
   `).run({
     id,
@@ -321,6 +332,7 @@ function updateStoredFilePath(id, storedPath, originalName, limits) {
     originalName,
     deleteMaxDownloads: limits.deleteMaxDownloads,
     deleteAt: limits.deleteAt,
+    description: limits.description,
   });
 }
 
@@ -384,6 +396,7 @@ function getLinkWithFile(shortName) {
       s.total_download_count,
       s.delete_max_downloads,
       s.delete_at,
+      s.description,
       s.created_at AS file_created_at
     FROM links l
     JOIN stored_files s ON s.id = l.stored_file_id

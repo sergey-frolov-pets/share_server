@@ -49,14 +49,19 @@
       </div>
 
       <form id="share-form" class="share-form hidden">
-        <label>
-          Короткое имя (часть ссылки)
-          <input type="text" id="short-name" placeholder="my-file" pattern="[A-Za-z0-9_-]+" required>
-          <span id="name-preview" class="hint"></span>
-          <span id="name-error" class="error hidden"></span>
-        </label>
+      <label>
+        Короткое имя (часть ссылки)
+        <input type="text" id="short-name" placeholder="my-file" pattern="[A-Za-z0-9_-]+" required>
+        <span id="name-preview" class="hint"></span>
+        <span id="name-error" class="error hidden"></span>
+      </label>
 
-        <fieldset class="fieldset">
+      <label>
+        Описание (опционально)
+        <textarea id="file-description" rows="3" placeholder="Кратко о файле"></textarea>
+      </label>
+
+      <fieldset class="fieldset">
           <legend>Ссылка — когда перестаёт скачиваться</legend>
           <div class="row">
             <label>
@@ -138,6 +143,11 @@
         </label>
 
         <p id="current-file-name" class="hint"></p>
+
+        <label>
+          Описание (опционально)
+          <textarea id="update-file-description" rows="3" placeholder="Кратко о файле"></textarea>
+        </label>
 
         <fieldset class="fieldset">
           <legend>Ссылка — когда перестаёт скачиваться</legend>

@@ -206,6 +206,13 @@ button[type="submit"]:disabled {
   margin-top: 20px;
 }
 
+.file-description {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
 .row {
   display: grid;
   grid-template-columns: 1fr 1fr;
