@@ -34,10 +34,10 @@
         <div id="user-upload-progress" class="upload-progress hidden">
           <div class="progress-bar"><div id="user-upload-progress-fill" class="progress-fill"></div></div>
           <span id="user-upload-progress-text" class="progress-text">0%</span>
-          <div class="upload-controls">
-            <button type="button" id="user-upload-pause-btn" class="btn-small hidden">Пауза</button>
-            <button type="button" id="user-upload-resume-btn" class="btn-small hidden">Продолжить</button>
-            <button type="button" id="user-upload-cancel-btn" class="btn-small hidden">Отмена</button>
+          <div class="upload-controls icon-actions">
+            <button type="button" id="user-upload-pause-btn" class="btn-icon hidden" data-icon="pause" title="Пауза" aria-label="Пауза"></button>
+            <button type="button" id="user-upload-resume-btn" class="btn-icon hidden" data-icon="play" title="Продолжить" aria-label="Продолжить"></button>
+            <button type="button" id="user-upload-cancel-btn" class="btn-icon hidden" data-icon="cancel" title="Отмена" aria-label="Отмена"></button>
           </div>
         </div>
       </div>
@@ -75,7 +75,7 @@
           <input type="password" id="user-download-password" placeholder="не задан">
         </label>
 
-        <button type="submit">Создать ссылку</button>
+        <button type="submit" class="btn-icon" data-icon="share" title="Создать ссылку" aria-label="Создать ссылку"></button>
         <p id="user-share-error" class="error hidden"></p>
       </form>
 
@@ -85,6 +85,7 @@
       </div>
     </section>
   </main>
+  <script src="/icons.js"></script>
   <script src="/chunk-upload.js"></script>
   <script src="/user-upload.js"></script>
 </body>

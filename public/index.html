@@ -19,7 +19,7 @@
         Пароль
         <input type="password" id="login-password" autocomplete="current-password" required>
       </label>
-      <button type="submit">Войти</button>
+      <button type="submit" class="btn-icon" data-icon="login" title="Войти" aria-label="Войти"></button>
       <p id="login-error" class="error hidden"></p>
     </form>
   </section>
@@ -27,13 +27,13 @@
   <section id="upload-section" class="card hidden">
     <header class="header">
       <h1>Загрузка файла</h1>
-      <button type="button" id="logout-btn" class="link-btn">Выйти</button>
+      <button type="button" id="logout-btn" class="btn-icon link-btn" data-icon="logout" title="Выйти" aria-label="Выйти"></button>
     </header>
 
     <div class="tabs">
-      <button type="button" id="tab-create" class="tab active">Новая ссылка</button>
-      <button type="button" id="tab-manage" class="tab">Обновить ссылку</button>
-      <button type="button" id="tab-admin" class="tab">Админка</button>
+      <button type="button" id="tab-create" class="tab active" data-icon="upload" title="Новая ссылка" aria-label="Новая ссылка"></button>
+      <button type="button" id="tab-manage" class="tab" data-icon="refresh" title="Обновить ссылку" aria-label="Обновить ссылку"></button>
+      <button type="button" id="tab-admin" class="tab" data-icon="list" title="Админка" aria-label="Админка"></button>
     </div>
 
     <div id="create-panel">
@@ -47,9 +47,9 @@
         <div class="upload-queue-header">
           <h3 class="upload-queue-title">Очередь загрузки</h3>
           <div class="upload-queue-actions">
-            <button type="button" id="queue-pause-btn" class="btn-small btn-secondary">Пауза очереди</button>
-            <button type="button" id="queue-resume-btn" class="btn-small btn-secondary hidden">Продолжить очередь</button>
-            <button type="button" id="queue-clear-btn" class="btn-small btn-secondary">Очистить завершённые</button>
+            <button type="button" id="queue-pause-btn" class="btn-icon btn-secondary" data-icon="pause" title="Пауза очереди" aria-label="Пауза очереди"></button>
+            <button type="button" id="queue-resume-btn" class="btn-icon btn-secondary hidden" data-icon="play" title="Продолжить очередь" aria-label="Продолжить очередь"></button>
+            <button type="button" id="queue-clear-btn" class="btn-icon btn-secondary" data-icon="clear" title="Очистить завершённые" aria-label="Очистить завершённые"></button>
           </div>
         </div>
         <ul id="upload-queue-list" class="upload-queue-list"></ul>
@@ -64,9 +64,9 @@
           <div class="progress-bar"><div id="upload-progress-fill" class="progress-fill"></div></div>
           <span id="upload-progress-text" class="progress-text">0%</span>
           <div class="upload-controls">
-            <button type="button" id="upload-pause-btn" class="btn-small hidden">Пауза</button>
-            <button type="button" id="upload-resume-btn" class="btn-small hidden">Продолжить</button>
-            <button type="button" id="upload-cancel-btn" class="btn-small hidden">Отмена</button>
+            <button type="button" id="upload-pause-btn" class="btn-icon hidden" data-icon="pause" title="Пауза" aria-label="Пауза"></button>
+            <button type="button" id="upload-resume-btn" class="btn-icon hidden" data-icon="play" title="Продолжить" aria-label="Продолжить"></button>
+            <button type="button" id="upload-cancel-btn" class="btn-icon hidden" data-icon="cancel" title="Отмена" aria-label="Отмена"></button>
           </div>
         </div>
       </div>
@@ -127,14 +127,14 @@
           <textarea id="allowed-domains" rows="2" placeholder="vk.ru"></textarea>
         </label>
 
-        <button type="submit" id="share-btn">Создать ссылку</button>
+        <button type="submit" id="share-btn" class="btn-icon" data-icon="share" title="Создать ссылку" aria-label="Создать ссылку"></button>
         <p id="share-error" class="error hidden"></p>
       </form>
 
       <div id="result" class="result hidden">
         <p>Ссылка готова:</p>
         <a id="share-link" href="#" target="_blank" rel="noopener"></a>
-        <button type="button" id="new-upload-btn" class="link-btn">Загрузить другой файл</button>
+        <button type="button" id="new-upload-btn" class="btn-icon link-btn" data-icon="upload" title="Загрузить другой файл" aria-label="Загрузить другой файл"></button>
       </div>
     </div>
 
@@ -144,7 +144,7 @@
           Имя ссылки для обновления
           <input type="text" id="manage-short-name" placeholder="my-file" required>
         </label>
-        <button type="submit">Загрузить настройки</button>
+        <button type="submit" class="btn-icon" data-icon="refresh" title="Загрузить настройки" aria-label="Загрузить настройки"></button>
         <p id="load-error" class="error hidden"></p>
       </form>
 
@@ -163,9 +163,9 @@
           <div class="progress-bar"><div id="update-upload-progress-fill" class="progress-fill"></div></div>
           <span id="update-upload-progress-text" class="progress-text">0%</span>
           <div class="upload-controls">
-            <button type="button" id="update-upload-pause-btn" class="btn-small hidden">Пауза</button>
-            <button type="button" id="update-upload-resume-btn" class="btn-small hidden">Продолжить</button>
-            <button type="button" id="update-upload-cancel-btn" class="btn-small hidden">Отмена</button>
+            <button type="button" id="update-upload-pause-btn" class="btn-icon hidden" data-icon="pause" title="Пауза" aria-label="Пауза"></button>
+            <button type="button" id="update-upload-resume-btn" class="btn-icon hidden" data-icon="play" title="Продолжить" aria-label="Продолжить"></button>
+            <button type="button" id="update-upload-cancel-btn" class="btn-icon hidden" data-icon="cancel" title="Отмена" aria-label="Отмена"></button>
           </div>
         </div>
       </div>
@@ -231,7 +231,7 @@
           Сбросить счётчик скачиваний ссылки
         </label>
 
-        <button type="submit" id="update-btn">Обновить ссылку</button>
+        <button type="submit" id="update-btn" class="btn-icon" data-icon="save" title="Обновить ссылку" aria-label="Обновить ссылку"></button>
         <p id="update-error" class="error hidden"></p>
         <p id="update-success" class="success hidden"></p>
       </form>
@@ -246,7 +246,7 @@
             Макс. объём на диске (МБ)
             <input type="number" id="global-max-storage-mb" min="1" placeholder="без лимита">
           </label>
-          <button type="submit" class="btn-small">Сохранить лимит</button>
+          <button type="submit" class="btn-icon" data-icon="save" title="Сохранить лимит" aria-label="Сохранить лимит"></button>
           <p id="storage-limit-success" class="success hidden"></p>
         </fieldset>
       </form>
@@ -271,6 +271,17 @@
       <p id="admin-error" class="error hidden"></p>
 
       <h2 class="section-title">Файлы на сервере</h2>
+      <div id="download-queue" class="upload-queue hidden">
+        <div class="upload-queue-header">
+          <h3 class="upload-queue-title">Очередь скачивания</h3>
+          <div class="upload-queue-actions">
+            <button type="button" id="download-queue-pause-btn" class="btn-icon btn-secondary" data-icon="pause" title="Пауза очереди" aria-label="Пауза очереди"></button>
+            <button type="button" id="download-queue-resume-btn" class="btn-icon btn-secondary hidden" data-icon="play" title="Продолжить очередь" aria-label="Продолжить очередь"></button>
+            <button type="button" id="download-queue-clear-btn" class="btn-icon btn-secondary" data-icon="clear" title="Очистить завершённые" aria-label="Очистить завершённые"></button>
+          </div>
+        </div>
+        <ul id="download-queue-list" class="upload-queue-list"></ul>
+      </div>
       <div id="admin-files-wrap" class="table-wrap">
         <table class="data-table" id="admin-files-table">
           <thead>
@@ -289,8 +300,10 @@
   </section>
   </main>
 
+  <script src="/icons.js"></script>
   <script src="/chunk-upload.js"></script>
   <script src="/upload-queue.js"></script>
+  <script src="/download-queue.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

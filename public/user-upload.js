@@ -171,6 +171,12 @@ shareForm.addEventListener('submit', async (e) => {
 });
 
 async function init() {
+  document.querySelectorAll('[data-icon]').forEach((btn) => {
+    const name = btn.dataset.icon;
+    if (name && !btn.querySelector('.icon')) {
+      btn.innerHTML = AppIcons.icon(name);
+    }
+  });
   try {
     const { user } = await api('/api/user/me');
     if (!user) {

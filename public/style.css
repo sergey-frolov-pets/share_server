@@ -418,6 +418,55 @@ button[type="submit"]:disabled {
   cursor: pointer;
 }
 
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.btn-icon .icon {
+  display: block;
+}
+
+.btn-icon:hover {
+  filter: brightness(0.95);
+}
+
+.btn-icon.link-btn,
+.link-btn.btn-icon {
+  width: auto;
+  height: auto;
+  padding: 6px;
+  background: transparent;
+  color: var(--accent);
+}
+
+.tabs .tab.btn-icon,
+.tabs .tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 12px;
+}
+
+.icon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .storage-limit-form {
   margin-bottom: 16px;
 }
@@ -446,6 +495,23 @@ button[type="submit"]:disabled {
 
 .btn-danger:hover {
   background: #fecaca;
+}
+
+.btn-icon.btn-danger {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.btn-icon.btn-secondary {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-icon.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .upload-queue {
@@ -566,6 +632,11 @@ button[type="submit"]:disabled {
   display: grid;
   gap: 6px;
   min-width: 120px;
+}
+
+.admin-file-actions.icon-actions {
+  display: flex;
+  min-width: auto;
 }
 
 .admin-file-actions input[type="text"] {

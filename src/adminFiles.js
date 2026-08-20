@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const { removeStorageFromDisk } = require('./chunkStorage');
+const { removeStorageFromDisk, storageExists, sendStoredFile } = require('./chunkStorage');
 const { isLinkAvailable, isStoredFileAvailable } = require('./limits');
 const {
   bytesToMb,
@@ -235,8 +235,30 @@ function handleAdminFileDelete(req, res) {
   });
 }
 
+function handleAdminFileDownload(req, res) {
+  const fileId = parseInt(req.params.id, 10);
+  if (!fileId) {
+    res.status(400).json({ error: 'Некорректный id файла' });
+    return;
+  }
+
+  const file = getStoredFileById(fileId);
+  if (!file) {
+    res.status(404).json({ error: 'Файл не найден' });
+    return;
+  }
+
+  if (!storageExists(file)) {
+    res.status(404).json({ error: 'Файл не найден на диске' });
+    return;
+  }
+
+  sendStoredFile(res, file, file.original_name);
+}
+
 module.exports = {
   handleAdminFilesList,
   handleAdminFileRename,
   handleAdminFileDelete,
+  handleAdminFileDownload,
 };

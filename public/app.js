@@ -71,6 +71,11 @@ const queueResumeBtn = document.getElementById('queue-resume-btn');
 const queueClearBtn = document.getElementById('queue-clear-btn');
 const adminFilesBody = document.getElementById('admin-files-body');
 const adminFilesMessage = document.getElementById('admin-files-message');
+const downloadQueueEl = document.getElementById('download-queue');
+const downloadQueueList = document.getElementById('download-queue-list');
+const downloadQueuePauseBtn = document.getElementById('download-queue-pause-btn');
+const downloadQueueResumeBtn = document.getElementById('download-queue-resume-btn');
+const downloadQueueClearBtn = document.getElementById('download-queue-clear-btn');
 
 let currentUploadId = null;
 let activeQueueItemId = null;
@@ -80,6 +85,15 @@ let updateUploadPromise = null;
 let updateUploader = null;
 let nameCheckTimeout = null;
 let editingShortName = null;
+
+function initIconButtons(root = document) {
+  root.querySelectorAll('[data-icon]').forEach((btn) => {
+    const name = btn.dataset.icon;
+    if (name && !btn.querySelector('.icon')) {
+      btn.innerHTML = AppIcons.icon(name);
+    }
+  });
+}
 
 function show(el) {
   el.classList.remove('hidden');
@@ -211,6 +225,65 @@ const uploadQueue = new UploadQueue({
   onActiveItem: handleQueueActiveItem,
 });
 
+const downloadQueue = new DownloadQueue({
+  onChange: renderDownloadQueue,
+});
+
+function renderDownloadQueue(state) {
+  if (!state.items.length) {
+    hide(downloadQueueEl);
+    downloadQueueList.innerHTML = '';
+    return;
+  }
+
+  show(downloadQueueEl);
+  downloadQueueList.innerHTML = state.items.map((item) => {
+    const label = DOWNLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
+    const activeClass = item.id === state.currentItemId ? ' active' : '';
+    const progressHtml = ['pending', 'downloading', 'paused'].includes(item.status)
+      ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
+      : '';
+    const errorHtml = item.error ? `<div class="upload-queue-item-meta">${escapeHtml(item.error)}</div>` : '';
+    return `
+      <li class="upload-queue-item${activeClass}">
+        <div class="upload-queue-item-main">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span>${label}${item.progress ? ` · ${item.progress}%` : ''}</span>
+        </div>
+        <div class="upload-queue-item-meta">${formatUploadBytes(item.size)}</div>
+        ${progressHtml}
+        ${errorHtml}
+        <div class="upload-queue-item-actions icon-actions">
+          ${['pending', 'downloading', 'paused'].includes(item.status)
+            ? AppIcons.iconButton('cancel', { className: 'btn-secondary download-queue-cancel-btn', title: 'Отмена', attrs: `data-download-id="${item.id}"` })
+            : ''}
+        </div>
+      </li>
+    `;
+  }).join('');
+
+  downloadQueueList.querySelectorAll('.download-queue-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => downloadQueue.cancelItem(btn.dataset.downloadId));
+  });
+
+  if (state.queuePaused) {
+    hide(downloadQueuePauseBtn);
+    show(downloadQueueResumeBtn);
+  } else {
+    show(downloadQueuePauseBtn);
+    hide(downloadQueueResumeBtn);
+  }
+  initIconButtons(downloadQueueList);
+}
+
+function enqueueDownload(file) {
+  downloadQueue.add({
+    fileId: file.id,
+    name: file.originalName,
+    size: file.sizeBytes || 0,
+  });
+}
+
 function renderUploadQueue(state) {
   if (!state.items.length) {
     hide(uploadQueueEl);
@@ -235,9 +308,9 @@ function renderUploadQueue(state) {
         <div class="upload-queue-item-meta">${formatUploadBytes(item.size)}</div>
         ${progressHtml}
         ${errorHtml}
-        <div class="upload-queue-item-actions">
-          ${item.status === 'ready' ? `<button type="button" class="btn-small queue-select-btn" data-queue-id="${item.id}">Создать ссылку</button>` : ''}
-          ${['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? `<button type="button" class="btn-small btn-secondary queue-cancel-btn" data-queue-id="${item.id}">Убрать</button>` : ''}
+        <div class="upload-queue-item-actions icon-actions">
+          ${item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : ''}
+          ${['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : ''}
         </div>
       </li>
     `;
@@ -257,6 +330,7 @@ function renderUploadQueue(state) {
     show(queuePauseBtn);
     hide(queueResumeBtn);
   }
+  initIconButtons(uploadQueueList);
 }
 
 async function handleQueueActiveItem(item) {
@@ -418,13 +492,14 @@ async function loadAdminPanel() {
             <input type="number" class="user-valid-days" min="1" placeholder="дней" value="">
           </div>
         </td>
-        <td><button type="button" class="btn-small user-save">Сохранить</button></td>
+        <td><button type="button" class="btn-icon user-save" data-icon="save" title="Сохранить" aria-label="Сохранить"></button></td>
       </tr>
     `).join('');
 
     adminUsersBody.querySelectorAll('.user-save').forEach((btn) => {
       btn.addEventListener('click', saveUserRow);
     });
+    initIconButtons(adminUsersBody);
 
     await loadAdminFiles();
   } catch (err) {
@@ -473,9 +548,10 @@ async function loadAdminFiles() {
         <td>${file.sizeMb ?? 0} МБ</td>
         <td><div class="admin-file-links">${linksHtml}</div></td>
         <td>
-          <div class="admin-file-actions">
-            <button type="button" class="btn-small admin-file-save">Сохранить</button>
-            <button type="button" class="btn-small btn-danger admin-file-delete">Удалить</button>
+          <div class="admin-file-actions icon-actions">
+            ${AppIcons.iconButton('download', { className: 'admin-file-download', title: 'Скачать', attrs: `data-file-id="${file.id}"` })}
+            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: 'Сохранить' })}
+            ${AppIcons.iconButton('delete', { className: 'btn-danger admin-file-delete', title: 'Удалить' })}
           </div>
         </td>
       </tr>
@@ -488,6 +564,21 @@ async function loadAdminFiles() {
   adminFilesBody.querySelectorAll('.admin-file-delete').forEach((btn) => {
     btn.addEventListener('click', deleteAdminFileRow);
   });
+  adminFilesBody.querySelectorAll('.admin-file-download').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      const row = e.target.closest('tr');
+      const fileId = parseInt(row.dataset.fileId, 10);
+      const originalName = row.querySelector('.admin-file-name').value.trim();
+      const sizeText = row.querySelector('td:nth-child(2)')?.textContent || '';
+      const sizeMb = parseFloat(sizeText) || 0;
+      enqueueDownload({
+        id: fileId,
+        originalName,
+        sizeBytes: Math.round(sizeMb * 1024 * 1024),
+      });
+    });
+  });
+  initIconButtons(adminFilesBody);
 }
 
 async function saveAdminFileRow(e) {
@@ -612,6 +703,10 @@ fileInput.addEventListener('change', () => {
 queuePauseBtn.addEventListener('click', () => uploadQueue.pauseQueue());
 queueResumeBtn.addEventListener('click', () => uploadQueue.resumeQueue());
 queueClearBtn.addEventListener('click', () => uploadQueue.clearFinished());
+
+downloadQueuePauseBtn.addEventListener('click', () => downloadQueue.pauseQueue());
+downloadQueueResumeBtn.addEventListener('click', () => downloadQueue.resumeQueue());
+downloadQueueClearBtn.addEventListener('click', () => downloadQueue.clearFinished());
 
 updateDropZone.addEventListener('click', () => updateFileInput.click());
 updateDropZone.addEventListener('dragover', (e) => {
@@ -820,6 +915,7 @@ function showUpload() {
 }
 
 async function init() {
+  initIconButtons();
   updateNamePreview();
   const { authenticated } = await api('/api/me');
   if (authenticated) {

@@ -36,6 +36,7 @@ const {
   handleAdminFilesList,
   handleAdminFileRename,
   handleAdminFileDelete,
+  handleAdminFileDownload,
 } = require('./adminFiles');
 const {
   handleCreateShare,
@@ -214,6 +215,7 @@ app.get('/api/admin/users', requireAdminAuth, handleAdminUsers);
 app.put('/api/admin/users/:id', requireAdminAuth, handleAdminUpdateUser);
 app.put('/api/admin/storage', requireAdminAuth, handleAdminStorageSettings);
 app.get('/api/admin/files', requireAdminAuth, handleAdminFilesList);
+app.get('/api/admin/files/:id/download', requireAdminAuth, handleAdminFileDownload);
 app.put('/api/admin/files/:id', requireAdminAuth, handleAdminFileRename);
 app.delete('/api/admin/files/:id', requireAdminAuth, handleAdminFileDelete);
 
