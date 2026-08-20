@@ -1,9 +1,9 @@
 (function (global) {
   const STATUS_LABELS = {
-    pending: 'В очереди',
-    uploading: 'Загрузка…',
-    paused: 'Пауза',
-    remote: 'Загрузка…',
+    pending: 'Ожидает',
+    uploading: 'Загружается',
+    paused: 'На паузе',
+    remote: 'На сервере',
     ready: 'Готов к публикации',
     shared: 'Ссылка создана',
     error: 'Ошибка',
@@ -11,14 +11,14 @@
   };
 
   const SERVER_STATUS_LABELS = {
-    active: 'Загрузка…',
-    paused: 'Пауза',
+    active: 'Загружается',
+    paused: 'На паузе',
   };
 
   const STORAGE_PREFIX = global.CHUNK_UPLOAD_STORAGE_PREFIX || 'shareChunkUpload:';
-  const NOTIFY_THROTTLE_MS = 100;
-  const SERVER_SYNC_MS = 1500;
-  const DISPLAY_TICK_MS = 500;
+  const NOTIFY_THROTTLE_MS = 50;
+  const SERVER_SYNC_MS = 1000;
+  const DISPLAY_TICK_MS = 250;
 
   function createItemId() {
     return `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -120,14 +120,34 @@
     }
 
     formatItemStatus(item) {
+      const pendingItems = this.items.filter((entry) => entry.status === 'pending');
+      const pendingIndex = pendingItems.findIndex((entry) => entry.id === item.id);
+
+      if (item.status === 'pending') {
+        if (pendingItems.length > 1 && pendingIndex >= 0) {
+          return `Ожидает · ${pendingIndex + 1}/${pendingItems.length}`;
+        }
+        return STATUS_LABELS.pending;
+      }
+
       if (item.status === 'remote' || (item.status === 'paused' && !item.file)) {
         const label = SERVER_STATUS_LABELS[item.serverStatus] || STATUS_LABELS[item.status] || item.status;
         return item.progress ? `${label} · ${item.progress}%` : label;
       }
+
       const label = STATUS_LABELS[item.status] || item.status;
-      return item.progress && ['pending', 'uploading', 'paused'].includes(item.status)
+      return item.progress && ['uploading', 'paused'].includes(item.status)
         ? `${label} · ${item.progress}%`
         : label;
+    }
+
+    formatItemBadge(item) {
+      if (item.status === 'uploading') return { text: 'Загружается', className: 'uploading' };
+      if (item.status === 'paused') return { text: 'На паузе', className: 'paused' };
+      if (item.status === 'pending') return { text: 'Ожидает', className: 'pending' };
+      if (item.status === 'remote') return { text: 'На сервере', className: 'remote' };
+      if (item.status === 'ready') return { text: 'Готов', className: 'ready' };
+      return null;
     }
 
     formatItemProgressDetail(item) {
@@ -365,8 +385,80 @@
       this.start();
     }
 
+    pauseItem(id) {
+      const item = this.getItem(id);
+      if (!item) return;
+
+      if (item.status === 'uploading' && this.currentItemId === id && this.currentUploader) {
+        item.status = 'paused';
+        item.serverStatus = 'paused';
+        this.currentUploader.pause().catch(() => {});
+        this.notify();
+        return;
+      }
+
+      if (item.status === 'pending' && item.file) {
+        item.status = 'paused';
+        this.notify();
+        this.start();
+        return;
+      }
+
+      if (item.sessionId && ['remote', 'paused'].includes(item.status) && !item.file) {
+        this.fetchFn(`${this.apiPrefix}/pause/${item.sessionId}`, {
+          method: 'POST',
+          body: JSON.stringify({}),
+        }).catch(() => {});
+        item.status = 'paused';
+        item.serverStatus = 'paused';
+        this.notify();
+      }
+    }
+
+    resumeItem(id) {
+      const item = this.getItem(id);
+      if (!item || item.status !== 'paused') return;
+
+      if (this.currentItemId === id && this.currentUploader) {
+        item.status = 'uploading';
+        item.serverStatus = 'active';
+        if (this.currentUploader.waitingForResume) {
+          this.currentUploader.resumeUpload().catch(() => {});
+        } else {
+          this.currentUploader.unpause().catch(() => {});
+        }
+        this.notify();
+        return;
+      }
+
+      if (item.sessionId && !item.file) {
+        this.fetchFn(`${this.apiPrefix}/resume/${item.sessionId}`, {
+          method: 'POST',
+          body: JSON.stringify({}),
+        }).catch(() => {});
+        item.status = 'remote';
+        item.serverStatus = 'active';
+        this.notify();
+        return;
+      }
+
+      if (item.file) {
+        item.status = 'pending';
+        this.notify();
+        this.start();
+      }
+    }
+
     pauseQueue() {
       this.queuePaused = true;
+      this.items.forEach((item) => {
+        if (item.status === 'uploading' && item.id === this.currentItemId && this.currentUploader) {
+          item.status = 'paused';
+          item.serverStatus = 'paused';
+        } else if (item.status === 'pending') {
+          item.status = 'paused';
+        }
+      });
       if (this.currentUploader) {
         this.currentUploader.pause().catch(() => {});
       }
@@ -375,8 +467,18 @@
 
     resumeQueue() {
       this.queuePaused = false;
-      if (this.currentUploader?.waitingForResume) {
-        this.currentUploader.resumeUpload().catch(() => {});
+      this.items.forEach((item) => {
+        if (item.status === 'paused' && item.file && item.id !== this.currentItemId) {
+          item.status = 'pending';
+        }
+      });
+      if (this.currentUploader?.waitingForResume || (this.currentUploader && this.getItem(this.currentItemId)?.status === 'paused')) {
+        const current = this.getItem(this.currentItemId);
+        if (current) {
+          current.status = 'uploading';
+          current.serverStatus = 'active';
+        }
+        this.currentUploader.unpause().catch(() => {});
       }
       this.notify();
       this.start();
