@@ -3,11 +3,16 @@
     pending: 'В очереди',
     uploading: 'Загрузка…',
     paused: 'Пауза',
-    awaiting_file: 'Выберите файл',
+    remote: 'Загрузка…',
     ready: 'Готов к публикации',
     shared: 'Ссылка создана',
     error: 'Ошибка',
     cancelled: 'Отменено',
+  };
+
+  const SERVER_STATUS_LABELS = {
+    active: 'Загрузка…',
+    paused: 'Пауза',
   };
 
   const STORAGE_PREFIX = global.CHUNK_UPLOAD_STORAGE_PREFIX || 'shareChunkUpload:';
@@ -35,9 +40,20 @@
     keysToRemove.forEach((key) => sessionStorage.removeItem(key));
   }
 
-  function mapServerStatus(status) {
-    if (status === 'paused') return 'paused';
-    return 'awaiting_file';
+  function sessionToItem(session) {
+    const serverStatus = session.status || 'active';
+    return {
+      id: createItemId(),
+      file: null,
+      sessionId: session.sessionId,
+      name: session.originalName,
+      size: session.totalSize,
+      serverStatus,
+      status: serverStatus === 'paused' ? 'paused' : 'remote',
+      progress: session.progress || 0,
+      uploadId: null,
+      error: null,
+    };
   }
 
   class UploadQueue {
@@ -51,6 +67,7 @@
       this.queuePaused = false;
       this.currentUploader = null;
       this.currentItemId = null;
+      this._syncTimer = null;
     }
 
     getState() {
@@ -78,42 +95,89 @@
       this.onChange(this.getState());
     }
 
-    restoreSessions(sessions) {
-      const entries = Array.isArray(sessions) ? sessions : [];
-      if (!entries.length) return false;
+    formatItemStatus(item) {
+      if (item.status === 'remote' || (item.status === 'paused' && !item.file)) {
+        const label = SERVER_STATUS_LABELS[item.serverStatus] || STATUS_LABELS[item.status] || item.status;
+        return item.progress ? `${label} · ${item.progress}%` : label;
+      }
+      const label = STATUS_LABELS[item.status] || item.status;
+      return item.progress && ['pending', 'uploading', 'paused'].includes(item.status)
+        ? `${label} · ${item.progress}%`
+        : label;
+    }
 
+    syncSessionsFromServer(sessions) {
+      const entries = Array.isArray(sessions) ? sessions : [];
+      const activeSessionIds = new Set(entries.map((session) => session.sessionId).filter(Boolean));
       let changed = false;
+
+      this.items = this.items.filter((item) => {
+        if (!item.sessionId || item.file || item.status === 'uploading') return true;
+        if (activeSessionIds.has(item.sessionId)) return true;
+        changed = true;
+        return false;
+      });
+
       for (const session of entries) {
         if (!session?.sessionId) continue;
-        if (this.items.some((item) => item.sessionId === session.sessionId)) continue;
 
-        this.items.push({
-          id: createItemId(),
-          file: null,
-          sessionId: session.sessionId,
-          name: session.originalName,
-          size: session.totalSize,
-          status: mapServerStatus(session.status),
-          progress: session.progress || 0,
-          uploadId: null,
-          error: null,
-        });
+        const existing = this.items.find((item) => item.sessionId === session.sessionId);
+        if (existing) {
+          if (existing.status === 'uploading') continue;
+          const nextStatus = session.status === 'paused' ? 'paused' : 'remote';
+          if (
+            existing.serverStatus !== session.status
+            || existing.progress !== session.progress
+            || existing.status !== nextStatus
+          ) {
+            existing.serverStatus = session.status;
+            existing.progress = session.progress || 0;
+            existing.status = nextStatus;
+            changed = true;
+          }
+          continue;
+        }
+
+        this.items.push(sessionToItem(session));
         changed = true;
       }
 
       if (changed) {
         this.notify();
       }
-      return changed;
+
+      this.updateServerSyncTimer();
+      return entries.length > 0;
     }
 
-    attachAwaitingFile(file) {
+    updateServerSyncTimer() {
+      const hasRemoteItems = this.items.some((item) => item.sessionId && !item.file && item.status !== 'uploading');
+      if (hasRemoteItems && !this._syncTimer) {
+        this._syncTimer = setInterval(() => {
+          this.refreshFromServer().catch(() => {});
+        }, 4000);
+      } else if (!hasRemoteItems && this._syncTimer) {
+        clearInterval(this._syncTimer);
+        this._syncTimer = null;
+      }
+    }
+
+    async refreshFromServer() {
+      const response = await this.fetchFn(`${this.apiPrefix}/sessions`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка запроса');
+      }
+      this.syncSessionsFromServer(data.sessions || []);
+    }
+
+    attachRemoteFile(file) {
       const match = this.items.find((item) => (
         !item.file
         && item.sessionId
         && item.name === file.name
         && item.size === file.size
-        && ['awaiting_file', 'paused'].includes(item.status)
+        && ['remote', 'paused'].includes(item.status)
       ));
 
       if (!match) return false;
@@ -132,12 +196,13 @@
       if (!files.length) return;
 
       for (const file of files) {
-        if (this.attachAwaitingFile(file)) continue;
+        if (this.attachRemoteFile(file)) continue;
 
         this.items.push({
           id: createItemId(),
           file,
           sessionId: null,
+          serverStatus: null,
           name: file.name,
           size: file.size,
           status: 'pending',
@@ -218,12 +283,14 @@
         this.currentItemId = null;
       }
       this.notify();
+      this.updateServerSyncTimer();
       this.start();
     }
 
     clearFinished() {
       this.items = this.items.filter((item) => !['shared', 'cancelled', 'error'].includes(item.status));
       this.notify();
+      this.updateServerSyncTimer();
     }
 
     async start() {
@@ -238,6 +305,7 @@
       next.error = null;
       this.onActiveItem(next);
       this.notify();
+      this.updateServerSyncTimer();
 
       if (next.sessionId) {
         sessionStorage.setItem(storageKey(this.apiPrefix, next.file), next.sessionId);
@@ -252,6 +320,7 @@
       uploader.setHandlers({
         onProgress: ({ percent }) => {
           next.progress = percent;
+          next.serverStatus = 'active';
           this.notify(false);
         },
         onStatus: () => {},
@@ -263,11 +332,13 @@
         if (result?.uploadId) {
           next.uploadId = result.uploadId;
           next.sessionId = null;
+          next.serverStatus = null;
           next.status = 'ready';
           next.progress = 100;
           this.onActiveItem(next);
         } else if (uploader.waitingForResume) {
           next.status = 'paused';
+          next.serverStatus = 'paused';
         } else if (uploader.cancelled) {
           next.status = 'cancelled';
         }
@@ -275,6 +346,7 @@
         this.currentUploader = null;
         if (uploader.waitingForResume) {
           next.status = 'paused';
+          next.serverStatus = 'paused';
           next.error = error.message;
         } else if (!uploader.cancelled) {
           next.status = 'error';
@@ -284,6 +356,7 @@
 
       this.running = false;
       this.notify();
+      this.updateServerSyncTimer();
 
       if (!this.queuePaused) {
         await this.start();
@@ -293,4 +366,5 @@
 
   global.UploadQueue = UploadQueue;
   global.UPLOAD_QUEUE_STATUS_LABELS = STATUS_LABELS;
+  global.UPLOAD_SERVER_STATUS_LABELS = SERVER_STATUS_LABELS;
 })(window);
