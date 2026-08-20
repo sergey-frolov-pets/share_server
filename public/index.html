@@ -39,13 +39,13 @@
     <div id="create-panel">
       <div id="drop-zone" class="drop-zone">
         <p>Перетащите файлы сюда</p>
-        <p class="hint">или кликните для выбора (можно несколько — очередь загрузки)</p>
+        <p class="hint">или выберите несколько — загрузка по очереди</p>
         <input type="file" id="file-input" hidden multiple>
       </div>
 
       <div id="upload-queue" class="upload-queue hidden">
         <div class="upload-queue-header">
-          <h3 class="upload-queue-title">Очередь загрузки</h3>
+          <h3 class="upload-queue-title">Загрузка</h3>
           <div class="upload-queue-actions">
             <button type="button" id="queue-pause-btn" class="btn-icon btn-secondary" data-icon="pause" title="Пауза очереди" aria-label="Пауза очереди"></button>
             <button type="button" id="queue-resume-btn" class="btn-icon btn-secondary hidden" data-icon="play" title="Продолжить очередь" aria-label="Продолжить очередь"></button>
@@ -55,23 +55,8 @@
         <ul id="upload-queue-list" class="upload-queue-list"></ul>
       </div>
 
-      <div id="file-info" class="file-info hidden">
-        <div class="upload-info-main">
-          <span id="file-name"></span>
-          <span id="upload-status" class="status"></span>
-        </div>
-        <div id="upload-progress" class="upload-progress hidden">
-          <div class="progress-bar"><div id="upload-progress-fill" class="progress-fill"></div></div>
-          <span id="upload-progress-text" class="progress-text">0%</span>
-          <div class="upload-controls">
-            <button type="button" id="upload-pause-btn" class="btn-icon hidden" data-icon="pause" title="Пауза" aria-label="Пауза"></button>
-            <button type="button" id="upload-resume-btn" class="btn-icon hidden" data-icon="play" title="Продолжить" aria-label="Продолжить"></button>
-            <button type="button" id="upload-cancel-btn" class="btn-icon hidden" data-icon="cancel" title="Отмена" aria-label="Отмена"></button>
-          </div>
-        </div>
-      </div>
-
       <form id="share-form" class="share-form hidden">
+      <p id="share-file-label" class="share-file-label hint hidden"></p>
       <label>
         Короткое имя (часть ссылки)
         <input type="text" id="short-name" placeholder="6 букв — автоматически" pattern="[A-Za-z0-9_-]+" required>
@@ -79,12 +64,9 @@
         <span id="name-error" class="error hidden"></span>
       </label>
 
-      <label>
-        Описание (опционально)
-        <textarea id="file-description" rows="3" placeholder="Кратко о файле"></textarea>
-      </label>
-
-      <fieldset class="fieldset">
+      <details class="share-advanced">
+        <summary>Дополнительно</summary>
+        <fieldset class="fieldset">
           <legend>Ссылка — когда перестаёт скачиваться</legend>
           <div class="row">
             <label>
@@ -113,6 +95,11 @@
         </fieldset>
 
         <label>
+          Описание (опционально)
+          <textarea id="file-description" rows="2" placeholder="Кратко о файле"></textarea>
+        </label>
+
+        <label>
           Пароль для скачивания (опционально)
           <input type="password" id="download-password" autocomplete="new-password" placeholder="не задан">
         </label>
@@ -126,8 +113,11 @@
           Доступ: домены
           <textarea id="allowed-domains" rows="2" placeholder="vk.ru"></textarea>
         </label>
+      </details>
 
+      <div class="share-submit-row">
         <button type="submit" id="share-btn" class="btn-icon" data-icon="share" title="Создать ссылку" aria-label="Создать ссылку"></button>
+      </div>
         <p id="share-error" class="error hidden"></p>
       </form>
 

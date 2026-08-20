@@ -18,10 +18,8 @@ const globalMaxStorageMb = document.getElementById('global-max-storage-mb');
 const storageLimitSuccess = document.getElementById('storage-limit-success');
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
-const fileInfo = document.getElementById('file-info');
-const fileNameEl = document.getElementById('file-name');
-const uploadStatusEl = document.getElementById('upload-status');
 const shareForm = document.getElementById('share-form');
+const shareFileLabel = document.getElementById('share-file-label');
 const shortNameInput = document.getElementById('short-name');
 const namePreview = document.getElementById('name-preview');
 const nameError = document.getElementById('name-error');
@@ -83,6 +81,7 @@ let updateUploadPromise = null;
 let updateUploader = null;
 let nameCheckTimeout = null;
 let editingShortName = null;
+let lastUploadQueueSnapshot = null;
 
 function initIconButtons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((btn) => {
@@ -190,11 +189,12 @@ function resetCreateState() {
   currentUploadId = null;
   uploadPromise = null;
   fileInput.value = '';
-  hide(fileInfo);
   hide(shareForm);
+  hide(shareFileLabel);
   hide(result);
   hide(uploadQueueEl);
   uploadQueueList.innerHTML = '';
+  lastUploadQueueSnapshot = null;
   setMessage(shareError, null);
   setMessage(nameError, null);
   shortNameInput.value = '';
@@ -207,11 +207,6 @@ function resetCreateState() {
   allowedEmailsInput.value = '';
   allowedDomainsInput.value = '';
   updateNamePreview();
-  uploadStatusEl.textContent = '';
-  uploadStatusEl.className = 'status';
-  document.getElementById('upload-progress')?.classList.add('hidden');
-  const fill = document.getElementById('upload-progress-fill');
-  if (fill) fill.style.width = '0%';
   hide(queueResumeBtn);
   show(queuePauseBtn);
 }
@@ -282,44 +277,90 @@ function enqueueDownload(file) {
   });
 }
 
+function formatQueueItemStatus(item) {
+  const label = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
+  return item.progress && ['pending', 'uploading', 'paused'].includes(item.status)
+    ? `${label} · ${item.progress}%`
+    : label;
+}
+
+function buildUploadQueueItemHtml(item, currentItemId) {
+  const activeClass = item.id === currentItemId ? ' active' : '';
+  const progressHtml = ['pending', 'uploading', 'paused'].includes(item.status)
+    ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
+    : '';
+  const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
+  return `
+    <li class="upload-queue-item${activeClass}" data-queue-id="${item.id}" data-status="${item.status}">
+      <div class="upload-queue-item-main">
+        <strong class="upload-queue-item-name">${escapeHtml(item.name)}</strong>
+        <span class="upload-queue-item-status">${formatQueueItemStatus(item)}</span>
+      </div>
+      <div class="upload-queue-item-meta">${formatUploadBytes(item.size)}</div>
+      ${progressHtml}
+      ${errorHtml}
+      <div class="upload-queue-item-actions icon-actions">
+        ${item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : ''}
+        ${['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : ''}
+      </div>
+    </li>
+  `;
+}
+
+function bindUploadQueueItemEvents(root = uploadQueueList) {
+  root.querySelectorAll('.queue-select-btn').forEach((btn) => {
+    btn.addEventListener('click', () => uploadQueue.setActiveItem(btn.dataset.queueId));
+  });
+  root.querySelectorAll('.queue-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => uploadQueue.cancelItem(btn.dataset.queueId));
+  });
+  initIconButtons(root);
+}
+
+function isUploadQueueProgressOnlyUpdate(prev, state) {
+  if (!prev || prev.items.length !== state.items.length) return false;
+  if (prev.currentItemId !== state.currentItemId) return false;
+  if (prev.queuePaused !== state.queuePaused) return false;
+  return state.items.every((item, index) => {
+    const previous = prev.items[index];
+    return previous
+      && previous.id === item.id
+      && previous.status === item.status
+      && previous.error === item.error
+      && previous.uploadId === item.uploadId;
+  });
+}
+
 function renderUploadQueue(state) {
   if (!state.items.length) {
     hide(uploadQueueEl);
     uploadQueueList.innerHTML = '';
+    lastUploadQueueSnapshot = null;
     return;
   }
 
   show(uploadQueueEl);
-  uploadQueueList.innerHTML = state.items.map((item) => {
-    const label = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
-    const activeClass = item.id === state.currentItemId ? ' active' : '';
-    const progressHtml = ['pending', 'uploading', 'paused'].includes(item.status)
-      ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
-      : '';
-    const errorHtml = item.error ? `<div class="upload-queue-item-meta">${item.error}</div>` : '';
-    return `
-      <li class="upload-queue-item${activeClass}" data-queue-id="${item.id}">
-        <div class="upload-queue-item-main">
-          <strong>${item.name}</strong>
-          <span>${label}${item.progress ? ` · ${item.progress}%` : ''}</span>
-        </div>
-        <div class="upload-queue-item-meta">${formatUploadBytes(item.size)}</div>
-        ${progressHtml}
-        ${errorHtml}
-        <div class="upload-queue-item-actions icon-actions">
-          ${item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : ''}
-          ${['pending', 'uploading', 'paused', 'ready'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : ''}
-        </div>
-      </li>
-    `;
-  }).join('');
 
-  uploadQueueList.querySelectorAll('.queue-select-btn').forEach((btn) => {
-    btn.addEventListener('click', () => uploadQueue.setActiveItem(btn.dataset.queueId));
-  });
-  uploadQueueList.querySelectorAll('.queue-cancel-btn').forEach((btn) => {
-    btn.addEventListener('click', () => uploadQueue.cancelItem(btn.dataset.queueId));
-  });
+  if (isUploadQueueProgressOnlyUpdate(lastUploadQueueSnapshot, state)) {
+    state.items.forEach((item) => {
+      const row = uploadQueueList.querySelector(`[data-queue-id="${item.id}"]`);
+      if (!row) return;
+      row.classList.toggle('active', item.id === state.currentItemId);
+      const statusEl = row.querySelector('.upload-queue-item-status');
+      if (statusEl) statusEl.textContent = formatQueueItemStatus(item);
+      const fill = row.querySelector('.upload-queue-item-progress-fill');
+      if (fill) fill.style.width = `${item.progress || 0}%`;
+    });
+    lastUploadQueueSnapshot = {
+      currentItemId: state.currentItemId,
+      queuePaused: state.queuePaused,
+      items: state.items.map((item) => ({ ...item })),
+    };
+    return;
+  }
+
+  uploadQueueList.innerHTML = state.items.map((item) => buildUploadQueueItemHtml(item, state.currentItemId)).join('');
+  bindUploadQueueItemEvents();
 
   if (state.queuePaused) {
     hide(queuePauseBtn);
@@ -328,41 +369,38 @@ function renderUploadQueue(state) {
     show(queuePauseBtn);
     hide(queueResumeBtn);
   }
-  initIconButtons(uploadQueueList);
+
+  lastUploadQueueSnapshot = {
+    currentItemId: state.currentItemId,
+    queuePaused: state.queuePaused,
+    items: state.items.map((item) => ({ ...item })),
+  };
 }
 
 async function handleQueueActiveItem(item) {
   if (!item) {
     hide(shareForm);
-    hide(fileInfo);
+    hide(shareFileLabel);
     currentUploadId = null;
     activeQueueItemId = null;
     return;
   }
 
   activeQueueItemId = item.id;
-  fileNameEl.textContent = item.name;
-  uploadStatusEl.textContent = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
-  uploadStatusEl.className = 'status uploading';
-  show(fileInfo);
 
   if (item.status === 'ready' && item.uploadId) {
     currentUploadId = item.uploadId;
-    uploadStatusEl.textContent = 'Готов к публикации';
-    uploadStatusEl.className = 'status done';
+    shareFileLabel.textContent = `Файл: ${item.name}`;
+    show(shareFileLabel);
     show(shareForm);
     shareBtn.disabled = false;
     await assignDefaultShortName();
     return;
   }
 
-  if (item.status === 'uploading') {
-    hide(shareForm);
-    shareBtn.disabled = true;
-  } else {
-    hide(shareForm);
-    shareBtn.disabled = true;
-  }
+  hide(shareForm);
+  hide(shareFileLabel);
+  shareBtn.disabled = true;
 }
 
 function enqueueFiles(fileList) {
@@ -779,7 +817,7 @@ shareForm.addEventListener('submit', async (e) => {
     });
 
     hide(shareForm);
-    hide(fileInfo);
+    hide(shareFileLabel);
     shareLink.href = data.shareUrl;
     shareLink.textContent = data.shareUrl;
     show(result);
