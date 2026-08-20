@@ -84,8 +84,10 @@
       return data;
     }
 
-    async initSession(file) {
-      const resumeSessionId = sessionStorage.getItem(storageKey(this.apiPrefix, file)) || undefined;
+    async initSession(file, options = {}) {
+      const resumeSessionId = options.resumeSessionId
+        || sessionStorage.getItem(storageKey(this.apiPrefix, file))
+        || undefined;
       const session = await this.api(`${this.apiPrefix}/init`, {
         method: 'POST',
         body: JSON.stringify({
@@ -233,7 +235,7 @@
       throw lastError;
     }
 
-    async upload(file) {
+    async upload(file, options = {}) {
       this.file = file;
       this.paused = false;
       this.cancelled = false;
@@ -241,7 +243,7 @@
 
       try {
         this.emitStatus('Подготовка…', 'uploading');
-        await this.initSession(file);
+        await this.initSession(file, options);
         if (this.onSession) this.onSession(this.session);
         this.updateProgressFromSet(new Set(this.session.uploadedChunks || []), this.session.chunkSize);
         await this.uploadChunks();
