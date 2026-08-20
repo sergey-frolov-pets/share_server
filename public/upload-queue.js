@@ -10,15 +10,11 @@
     cancelled: 'Отменено',
   };
 
-  const SERVER_STATUS_LABELS = {
-    active: 'На сервере',
-    paused: 'На паузе',
-  };
-
   const STORAGE_PREFIX = global.CHUNK_UPLOAD_STORAGE_PREFIX || 'shareChunkUpload:';
   const NOTIFY_THROTTLE_MS = 50;
   const SERVER_SYNC_MS = 1000;
   const DISPLAY_TICK_MS = 250;
+  const MAX_CONCURRENT_UPLOADS = 3;
 
   function createItemId() {
     return `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -85,11 +81,10 @@
       this.fetchFn = options.fetchFn;
       this.onChange = options.onChange || (() => {});
       this.onActiveItem = options.onActiveItem || (() => {});
+      this.maxConcurrent = options.maxConcurrent || MAX_CONCURRENT_UPLOADS;
       this.items = [];
-      this.running = false;
       this.queuePaused = false;
-      this.currentUploader = null;
-      this.currentItemId = null;
+      this.uploaders = new Map();
       this._syncTimer = null;
       this._displayTimer = null;
     }
@@ -97,9 +92,9 @@
     getState() {
       return {
         items: this.items.map((item) => ({ ...item, file: undefined })),
-        running: this.running,
         queuePaused: this.queuePaused,
-        currentItemId: this.currentItemId,
+        activeUploadCount: this.getActiveUploadCount(),
+        maxConcurrent: this.maxConcurrent,
       };
     }
 
@@ -117,6 +112,10 @@
         this._notifyTimer = null;
       }
       this.onChange(this.getState());
+    }
+
+    getActiveUploadCount() {
+      return this.items.filter((item) => item.status === 'uploading').length;
     }
 
     getRemoteWaitingItems() {
@@ -140,9 +139,6 @@
       }
 
       if (item.status === 'paused') {
-        if (!item.file) {
-          return item.progress ? `На паузе · ${item.progress}%` : 'На паузе';
-        }
         return item.progress ? `На паузе · ${item.progress}%` : 'На паузе';
       }
 
@@ -298,7 +294,7 @@
         this._displayTimer = setInterval(() => {
           let changed = false;
           this.items.forEach((item) => {
-            if (item.etaSeconds > 0 && ['uploading', 'remote'].includes(item.status)) {
+            if (item.etaSeconds > 0 && item.status === 'uploading') {
               item.etaSeconds = Math.max(0, item.etaSeconds - DISPLAY_TICK_MS / 1000);
               changed = true;
             }
@@ -383,8 +379,7 @@
     }
 
     getActiveItem() {
-      return this.items.find((item) => item.id === this.currentItemId)
-        || this.items.find((item) => item.status === 'ready')
+      return this.items.find((item) => item.status === 'ready')
         || this.items.find((item) => item.status === 'uploading')
         || null;
     }
@@ -392,7 +387,6 @@
     setActiveItem(id) {
       const item = this.getItem(id);
       if (!item || !['ready', 'uploading', 'paused'].includes(item.status)) return;
-      this.currentItemId = id;
       this.onActiveItem(item);
       this.notify();
     }
@@ -401,11 +395,8 @@
       const item = this.getItem(id);
       if (!item) return;
       item.status = 'shared';
-      if (this.currentItemId === id) {
-        const next = this.items.find((entry) => entry.status === 'ready');
-        this.currentItemId = next?.id || null;
-        if (next) this.onActiveItem(next);
-      }
+      const next = this.items.find((entry) => entry.status === 'ready');
+      if (next) this.onActiveItem(next);
       this.notify();
       this.start();
     }
@@ -414,22 +405,24 @@
       const item = this.getItem(id);
       if (!item) return;
 
-      if (item.status === 'uploading' && this.currentItemId === id && this.currentUploader) {
+      const uploader = this.uploaders.get(id);
+
+      if (item.status === 'uploading' && uploader) {
         item.status = 'paused';
         item.serverStatus = 'paused';
-        this.currentUploader.pause().catch(() => {});
-        this.notify();
-        return;
-      }
-
-      if (item.status === 'pending' && item.file) {
-        item.status = 'paused';
+        uploader.pause().catch(() => {});
         this.notify();
         this.start();
         return;
       }
 
-      if (item.sessionId && ['remote', 'paused'].includes(item.status) && !item.file) {
+      if (item.status === 'pending') {
+        item.status = 'paused';
+        this.notify();
+        return;
+      }
+
+      if (item.sessionId && item.status === 'remote' && !item.file) {
         this.fetchFn(`${this.apiPrefix}/pause/${item.sessionId}`, {
           method: 'POST',
           body: JSON.stringify({}),
@@ -444,13 +437,17 @@
       const item = this.getItem(id);
       if (!item || item.status !== 'paused') return;
 
-      if (this.currentItemId === id && this.currentUploader) {
+      const uploader = this.uploaders.get(id);
+
+      if (uploader) {
+        if (this.getActiveUploadCount() >= this.maxConcurrent) return;
+
         item.status = 'uploading';
         item.serverStatus = 'active';
-        if (this.currentUploader.waitingForResume) {
-          this.currentUploader.resumeUpload().catch(() => {});
+        if (uploader.waitingForResume) {
+          uploader.resumeUpload().catch(() => {});
         } else {
-          this.currentUploader.unpause().catch(() => {});
+          uploader.unpause().catch(() => {});
         }
         this.notify();
         return;
@@ -477,34 +474,30 @@
     pauseQueue() {
       this.queuePaused = true;
       this.items.forEach((item) => {
-        if (item.status === 'uploading' && item.id === this.currentItemId && this.currentUploader) {
-          item.status = 'paused';
-          item.serverStatus = 'paused';
+        if (item.status === 'uploading') {
+          this.pauseItem(item.id);
         } else if (item.status === 'pending') {
           item.status = 'paused';
+        } else if (item.status === 'remote') {
+          this.pauseItem(item.id);
         }
       });
-      if (this.currentUploader) {
-        this.currentUploader.pause().catch(() => {});
-      }
       this.notify();
     }
 
     resumeQueue() {
       this.queuePaused = false;
       this.items.forEach((item) => {
-        if (item.status === 'paused' && item.file && item.id !== this.currentItemId) {
+        if (item.status === 'paused' && item.file && !this.uploaders.has(item.id)) {
           item.status = 'pending';
         }
       });
-      if (this.currentUploader?.waitingForResume || (this.currentUploader && this.getItem(this.currentItemId)?.status === 'paused')) {
-        const current = this.getItem(this.currentItemId);
-        if (current) {
-          current.status = 'uploading';
-          current.serverStatus = 'active';
+      this.uploaders.forEach((uploader, id) => {
+        const item = this.getItem(id);
+        if (item?.status === 'paused') {
+          this.resumeItem(id);
         }
-        this.currentUploader.unpause().catch(() => {});
-      }
+      });
       this.notify();
       this.start();
     }
@@ -513,9 +506,10 @@
       const item = this.getItem(id);
       if (!item) return;
 
-      if (this.currentItemId === id && this.currentUploader) {
-        this.currentUploader.cancel().catch(() => {});
-        this.currentUploader = null;
+      const uploader = this.uploaders.get(id);
+      if (uploader) {
+        uploader.cancel().catch(() => {});
+        this.uploaders.delete(id);
       } else if (item.sessionId) {
         this.fetchFn(`${this.apiPrefix}/cancel/${item.sessionId}`, {
           method: 'DELETE',
@@ -524,9 +518,6 @@
       }
 
       item.status = 'cancelled';
-      if (this.currentItemId === id) {
-        this.currentItemId = null;
-      }
       this.notify();
       this.updateServerSyncTimer();
       this.updateDisplayTimer();
@@ -540,82 +531,89 @@
       this.updateDisplayTimer();
     }
 
-    async start() {
-      if (this.running || this.queuePaused) return;
+    start() {
+      if (this.queuePaused) return;
 
-      const next = this.items.find((item) => item.status === 'pending' && item.file);
-      if (!next) return;
+      while (this.getActiveUploadCount() < this.maxConcurrent) {
+        const next = this.items.find((item) => item.status === 'pending' && item.file);
+        if (!next) break;
+        this.startItemUpload(next);
+      }
+    }
 
-      this.running = true;
-      this.currentItemId = next.id;
-      next.status = 'uploading';
-      next.error = null;
-      this.onActiveItem(next);
+    startItemUpload(item) {
+      item.status = 'uploading';
+      item.error = null;
+      this.onActiveItem(item);
       this.notify();
       this.updateServerSyncTimer();
       this.updateDisplayTimer();
 
-      if (next.sessionId) {
-        sessionStorage.setItem(storageKey(this.apiPrefix, next.file), next.sessionId);
+      if (item.sessionId && item.file) {
+        sessionStorage.setItem(storageKey(this.apiPrefix, item.file), item.sessionId);
       }
 
       const uploader = new global.ChunkUploader({
         apiPrefix: this.apiPrefix,
         fetchFn: this.fetchFn,
       });
-      this.currentUploader = uploader;
+      this.uploaders.set(item.id, uploader);
 
       uploader.setHandlers({
-        onProgress: ({ percent, bytesReceived, totalSize }) => {
-          this.updateItemTransferStats(next, bytesReceived, totalSize);
-          next.serverStatus = 'active';
+        onProgress: ({ bytesReceived, totalSize }) => {
+          this.updateItemTransferStats(item, bytesReceived, totalSize);
+          item.serverStatus = 'active';
           this.notify(false);
         },
         onStatus: () => {},
       });
 
-      try {
-        const result = await uploader.upload(next.file);
-        this.currentUploader = null;
-        if (result?.uploadId) {
-          next.uploadId = result.uploadId;
-          next.sessionId = null;
-          next.serverStatus = null;
-          next.status = 'ready';
-          next.progress = 100;
-          next.bytesReceived = next.size;
-          next.etaSeconds = 0;
-          this.onActiveItem(next);
-        } else if (uploader.waitingForResume) {
-          next.status = 'paused';
-          next.serverStatus = 'paused';
-        } else if (uploader.cancelled) {
-          next.status = 'cancelled';
-        }
-      } catch (error) {
-        this.currentUploader = null;
-        if (uploader.waitingForResume) {
-          next.status = 'paused';
-          next.serverStatus = 'paused';
-          next.error = error.message;
-        } else if (!uploader.cancelled) {
-          next.status = 'error';
-          next.error = error.message;
-        }
-      }
-
-      this.running = false;
-      this.notify();
-      this.updateServerSyncTimer();
-      this.updateDisplayTimer();
-
-      if (!this.queuePaused) {
-        await this.start();
-      }
+      uploader.upload(item.file)
+        .then((result) => {
+          this.uploaders.delete(item.id);
+          if (result?.uploadId) {
+            item.uploadId = result.uploadId;
+            item.sessionId = null;
+            item.serverStatus = null;
+            item.status = 'ready';
+            item.progress = 100;
+            item.bytesReceived = item.size;
+            item.etaSeconds = 0;
+            this.onActiveItem(item);
+          } else if (uploader.waitingForResume || uploader.paused) {
+            item.status = 'paused';
+            item.serverStatus = 'paused';
+          } else if (uploader.cancelled) {
+            item.status = 'cancelled';
+            this.uploaders.delete(item.id);
+          }
+        })
+        .catch((error) => {
+          if (!uploader.cancelled) {
+            if (uploader.waitingForResume || uploader.paused) {
+              item.status = 'paused';
+              item.serverStatus = 'paused';
+              item.error = error.message;
+            } else {
+              this.uploaders.delete(item.id);
+              item.status = 'error';
+              item.error = error.message;
+            }
+          }
+        })
+        .finally(() => {
+          this.notify();
+          this.updateServerSyncTimer();
+          this.updateDisplayTimer();
+          if (!uploader.paused && !uploader.waitingForResume) {
+            this.uploaders.delete(item.id);
+          }
+          this.start();
+        });
     }
   }
 
   global.UploadQueue = UploadQueue;
   global.UPLOAD_QUEUE_STATUS_LABELS = STATUS_LABELS;
-  global.UPLOAD_SERVER_STATUS_LABELS = SERVER_STATUS_LABELS;
+  global.UPLOAD_MAX_CONCURRENT = MAX_CONCURRENT_UPLOADS;
 })(window);
