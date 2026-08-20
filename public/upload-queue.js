@@ -16,6 +16,9 @@
   };
 
   const STORAGE_PREFIX = global.CHUNK_UPLOAD_STORAGE_PREFIX || 'shareChunkUpload:';
+  const NOTIFY_THROTTLE_MS = 100;
+  const SERVER_SYNC_MS = 1500;
+  const DISPLAY_TICK_MS = 500;
 
   function createItemId() {
     return `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -88,6 +91,7 @@
       this.currentUploader = null;
       this.currentItemId = null;
       this._syncTimer = null;
+      this._displayTimer = null;
     }
 
     getState() {
@@ -105,7 +109,7 @@
         this._notifyTimer = setTimeout(() => {
           this._notifyTimer = null;
           this.onChange(this.getState());
-        }, 250);
+        }, NOTIFY_THROTTLE_MS);
         return;
       }
       if (this._notifyTimer) {
@@ -171,7 +175,7 @@
       const now = Date.now();
       const elapsedSec = (now - tracker.lastTime) / 1000;
 
-      if (elapsedSec >= 0.5 && received > tracker.lastBytes) {
+      if (elapsedSec >= 0.3 && received > tracker.lastBytes) {
         const instantSpeed = (received - tracker.lastBytes) / elapsedSec;
         tracker.speedBps = tracker.speedBps
           ? tracker.speedBps * 0.7 + instantSpeed * 0.3
@@ -219,7 +223,7 @@
             existing.bytesReceived = nextBytes;
             existing.status = nextStatus;
             if (nextBytes > prevBytes) {
-              this.updateItemTransferStats(existing, nextBytes, session.totalSize, 4);
+              this.updateItemTransferStats(existing, nextBytes, session.totalSize, SERVER_SYNC_MS / 1000);
             }
             changed = true;
           }
@@ -235,7 +239,31 @@
       }
 
       this.updateServerSyncTimer();
+      this.updateDisplayTimer();
       return entries.length > 0;
+    }
+
+    updateDisplayTimer() {
+      const shouldTick = this.items.some((item) => (
+        item.status === 'uploading'
+        || (item.sessionId && ['remote', 'paused'].includes(item.status) && !item.file)
+      ));
+
+      if (shouldTick && !this._displayTimer) {
+        this._displayTimer = setInterval(() => {
+          let changed = false;
+          this.items.forEach((item) => {
+            if (item.etaSeconds > 0 && ['uploading', 'remote'].includes(item.status)) {
+              item.etaSeconds = Math.max(0, item.etaSeconds - DISPLAY_TICK_MS / 1000);
+              changed = true;
+            }
+          });
+          if (changed) this.notify(false);
+        }, DISPLAY_TICK_MS);
+      } else if (!shouldTick && this._displayTimer) {
+        clearInterval(this._displayTimer);
+        this._displayTimer = null;
+      }
     }
 
     updateServerSyncTimer() {
@@ -243,7 +271,7 @@
       if (hasRemoteItems && !this._syncTimer) {
         this._syncTimer = setInterval(() => {
           this.refreshFromServer().catch(() => {});
-        }, 4000);
+        }, SERVER_SYNC_MS);
       } else if (!hasRemoteItems && this._syncTimer) {
         clearInterval(this._syncTimer);
         this._syncTimer = null;
@@ -374,6 +402,7 @@
       }
       this.notify();
       this.updateServerSyncTimer();
+      this.updateDisplayTimer();
       this.start();
     }
 
@@ -381,6 +410,7 @@
       this.items = this.items.filter((item) => !['shared', 'cancelled', 'error'].includes(item.status));
       this.notify();
       this.updateServerSyncTimer();
+      this.updateDisplayTimer();
     }
 
     async start() {
@@ -396,6 +426,7 @@
       this.onActiveItem(next);
       this.notify();
       this.updateServerSyncTimer();
+      this.updateDisplayTimer();
 
       if (next.sessionId) {
         sessionStorage.setItem(storageKey(this.apiPrefix, next.file), next.sessionId);
@@ -449,6 +480,7 @@
       this.running = false;
       this.notify();
       this.updateServerSyncTimer();
+      this.updateDisplayTimer();
 
       if (!this.queuePaused) {
         await this.start();
