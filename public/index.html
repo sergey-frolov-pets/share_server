@@ -52,7 +52,10 @@
             <button type="button" id="queue-clear-btn" class="btn-icon btn-secondary" data-icon="clear" title="Очистить завершённые" aria-label="Очистить завершённые"></button>
           </div>
         </div>
-        <p id="upload-queue-resume-hint" class="upload-queue-resume-hint hidden"></p>
+        <p id="upload-queue-resume-hint" class="upload-queue-resume-hint hidden">
+          <span id="upload-queue-resume-text"></span>
+          <button type="button" id="upload-queue-resume-btn" class="queue-tool-btn hidden">Возобновить загрузку</button>
+        </p>
         <ul id="upload-queue-list" class="upload-queue-list"></ul>
       </div>
 
@@ -292,6 +295,7 @@
   </main>
 
   <script src="/icons.js"></script>
+  <script src="/file-handle-store.js"></script>
   <script src="/chunk-upload.js"></script>
   <script src="/upload-queue.js"></script>
   <script src="/download-queue.js"></script>

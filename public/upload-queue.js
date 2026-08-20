@@ -382,6 +382,46 @@
       return true;
     }
 
+    async restoreFilesFromStoredHandles(options = {}) {
+      const store = global.FileHandleStore;
+      if (!store?.getFileBySessionId) {
+        return { restored: 0, pendingPermission: 0, waiting: 0 };
+      }
+
+      const targets = this.items.filter((item) => (
+        !item.file
+        && item.sessionId
+        && ['remote', 'paused'].includes(item.status)
+      ));
+
+      let restored = 0;
+      let pendingPermission = 0;
+
+      for (const item of targets) {
+        const hasStored = await store.hasStoredSession(item.sessionId);
+        if (!hasStored) continue;
+
+        const file = await store.getFileBySessionId(item.sessionId, {
+          allowRequest: options.allowRequest === true,
+        });
+
+        if (!file) {
+          pendingPermission += 1;
+          continue;
+        }
+
+        if (this.attachRemoteFile(file)) {
+          restored += 1;
+        }
+      }
+
+      return {
+        restored,
+        pendingPermission,
+        waiting: targets.length,
+      };
+    }
+
     addFiles(fileList) {
       const files = Array.from(fileList || []).filter(Boolean);
       if (!files.length) return;
@@ -430,6 +470,12 @@
       const item = this.getItem(id);
       if (!item) return;
       item.status = 'shared';
+      if (item.sessionId && global.FileHandleStore?.removeBySessionId) {
+        global.FileHandleStore.removeBySessionId(item.sessionId).catch(() => {});
+      }
+      if (item.file && global.FileHandleStore?.removeByFile) {
+        global.FileHandleStore.removeByFile(item.file).catch(() => {});
+      }
       const next = this.items.find((entry) => entry.status === 'ready');
       if (next) this.onActiveItem(next);
       this.notify();
@@ -597,6 +643,13 @@
           method: 'DELETE',
         }).catch(() => {});
         clearSessionStorageForSession(item.sessionId);
+        if (global.FileHandleStore?.removeBySessionId) {
+          global.FileHandleStore.removeBySessionId(item.sessionId).catch(() => {});
+        }
+      }
+
+      if (item.file && global.FileHandleStore?.removeByFile) {
+        global.FileHandleStore.removeByFile(item.file).catch(() => {});
       }
 
       item.status = 'cancelled';
@@ -654,6 +707,14 @@
       this.uploaders.set(item.id, uploader);
 
       uploader.setHandlers({
+        onSession: (session) => {
+          if (!session?.sessionId || !item.file) return;
+          item.sessionId = session.sessionId;
+          sessionStorage.setItem(storageKey(this.apiPrefix, item.file), session.sessionId);
+          if (global.FileHandleStore?.linkSession) {
+            global.FileHandleStore.linkSession(item.file, session.sessionId).catch(() => {});
+          }
+        },
         onProgress: ({ bytesReceived, totalSize }) => {
           if (uploader.session?.sessionId) {
             item.sessionId = uploader.session.sessionId;

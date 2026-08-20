@@ -582,6 +582,18 @@ button[type="submit"]:disabled {
   color: #9a3412;
   font-size: 0.8125rem;
   line-height: 1.4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-queue-resume-hint.hidden {
+  display: none;
+}
+
+#upload-queue-resume-btn {
+  margin-left: auto;
 }
 
 .upload-queue-item-toolbar {

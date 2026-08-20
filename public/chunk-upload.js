@@ -46,6 +46,7 @@
       this.onStatus = handlers.onStatus || null;
       this.onComplete = handlers.onComplete || null;
       this.onError = handlers.onError || null;
+      this.onSession = handlers.onSession || null;
     }
 
     emitStatus(text, className) {
@@ -241,6 +242,7 @@
       try {
         this.emitStatus('Подготовка…', 'uploading');
         await this.initSession(file);
+        if (this.onSession) this.onSession(this.session);
         this.updateProgressFromSet(new Set(this.session.uploadedChunks || []), this.session.chunkSize);
         await this.uploadChunks();
         if (this.cancelled) return null;
