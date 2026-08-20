@@ -285,6 +285,13 @@ function enqueueDownload(file) {
   });
 }
 
+function formatQueueItemProgress(item) {
+  if (typeof uploadQueue.formatItemProgressDetail === 'function') {
+    return uploadQueue.formatItemProgressDetail(item);
+  }
+  return '';
+}
+
 function formatQueueItemStatus(item) {
   if (typeof uploadQueue.formatItemStatus === 'function') {
     return uploadQueue.formatItemStatus(item);
@@ -306,18 +313,23 @@ function buildUploadQueueItemHtml(item, currentItemId) {
     ['pending', 'uploading', 'paused', 'ready', 'remote'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
   ].filter(Boolean).join('');
 
+  const progressDetail = formatQueueItemProgress(item);
+  const progressDetailHtml = progressDetail
+    ? `<div class="upload-queue-item-progress-meta">${escapeHtml(progressDetail)}</div>`
+    : '';
+
   return `
     <li class="upload-queue-item${activeClass}" data-queue-id="${item.id}" data-status="${item.status}">
       <div class="upload-queue-item-row">
         <div class="upload-queue-item-text">
           <span class="upload-queue-item-name">${escapeHtml(item.name)}</span>
           <div class="upload-queue-item-sub">
-            <span class="upload-queue-item-size">${formatUploadBytes(item.size)}</span>
-            <span class="upload-queue-item-status">${formatQueueItemStatus(item)}</span>
+            <span class="upload-queue-item-status">${escapeHtml(formatQueueItemStatus(item))}</span>
           </div>
         </div>
         ${actionsHtml ? `<div class="upload-queue-item-actions icon-actions">${actionsHtml}</div>` : ''}
       </div>
+      ${progressDetailHtml}
       ${progressHtml}
       ${errorHtml}
     </li>
@@ -346,7 +358,9 @@ function isUploadQueueProgressOnlyUpdate(prev, state) {
       && previous.error === item.error
       && previous.uploadId === item.uploadId
       && previous.sessionId === item.sessionId
-      && previous.serverStatus === item.serverStatus;
+      && previous.serverStatus === item.serverStatus
+      && previous.bytesReceived === item.bytesReceived
+      && previous.etaSeconds === item.etaSeconds;
   });
 }
 
@@ -367,6 +381,12 @@ function renderUploadQueue(state) {
       row.classList.toggle('active', item.id === state.currentItemId);
       const statusEl = row.querySelector('.upload-queue-item-status');
       if (statusEl) statusEl.textContent = formatQueueItemStatus(item);
+      const progressMetaEl = row.querySelector('.upload-queue-item-progress-meta');
+      const progressDetail = formatQueueItemProgress(item);
+      if (progressMetaEl) {
+        progressMetaEl.textContent = progressDetail;
+        progressMetaEl.classList.toggle('hidden', !progressDetail);
+      }
       const fill = row.querySelector('.upload-queue-item-progress-fill');
       if (fill) fill.style.width = `${item.progress || 0}%`;
     });
