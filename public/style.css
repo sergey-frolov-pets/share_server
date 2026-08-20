@@ -565,6 +565,54 @@ button[type="submit"]:disabled {
   min-width: 0;
 }
 
+.upload-queue-hint {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.upload-queue-item-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.queue-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.queue-tool-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.queue-tool-btn--danger:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.queue-tool-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.queue-tool-icon .icon {
+  display: block;
+}
+
 .upload-queue-actions {
   display: flex;
   flex-shrink: 0;

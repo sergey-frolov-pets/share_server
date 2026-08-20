@@ -180,11 +180,10 @@ function buildLimitPayload(linkMax, linkDays, fileMax, fileDays) {
 }
 
 function resetCreateState() {
+  uploadQueue.uploaders.forEach((uploader) => uploader.cancel().catch(() => {}));
+  uploadQueue.uploaders.clear();
   uploadQueue.items = [];
-  uploadQueue.running = false;
   uploadQueue.queuePaused = false;
-  uploadQueue.currentUploader = null;
-  uploadQueue.currentItemId = null;
   activeQueueItemId = null;
   currentUploadId = null;
   uploadPromise = null;
@@ -309,7 +308,27 @@ function formatQueueItemBadge(item) {
   return null;
 }
 
-function buildUploadQueueItemHtml(item, currentItemId) {
+function buildQueueItemToolbar(item) {
+  const parts = [];
+
+  if (['uploading', 'pending', 'remote'].includes(item.status)) {
+    parts.push(`<button type="button" class="queue-tool-btn queue-pause-item-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('pause', 14)}</span><span>Пауза</span></button>`);
+  } else if (item.status === 'paused') {
+    parts.push(`<button type="button" class="queue-tool-btn queue-resume-item-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('play', 14)}</span><span>Продолжить</span></button>`);
+  }
+
+  if (item.status === 'ready') {
+    parts.push(`<button type="button" class="queue-tool-btn queue-select-btn" data-queue-id="${item.id}" title="Создать ссылку"><span class="queue-tool-icon">${AppIcons.icon('link', 14)}</span><span>Ссылка</span></button>`);
+  }
+
+  if (['pending', 'uploading', 'paused', 'ready', 'remote'].includes(item.status)) {
+    parts.push(`<button type="button" class="queue-tool-btn queue-tool-btn--danger queue-cancel-btn" data-queue-id="${item.id}"><span class="queue-tool-icon">${AppIcons.icon('cancel', 14)}</span><span>Убрать</span></button>`);
+  }
+
+  return parts.length ? `<div class="upload-queue-item-toolbar">${parts.join('')}</div>` : '';
+}
+
+function buildUploadQueueItemHtml(item) {
   const activeClass = item.status === 'uploading' ? ' active' : '';
   const statusClass = ` upload-queue-item--${item.status}`;
   const badge = formatQueueItemBadge(item);
@@ -318,42 +337,16 @@ function buildUploadQueueItemHtml(item, currentItemId) {
     : '';
   const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
 
-  let controlBtn = '';
-  if (item.status === 'uploading' || item.status === 'pending') {
-    controlBtn = AppIcons.iconButton('pause', {
-      className: 'btn-secondary queue-pause-item-btn',
-      title: 'Пауза',
-      attrs: `data-queue-id="${item.id}"`,
-    });
-  } else if (item.status === 'paused') {
-    controlBtn = AppIcons.iconButton('play', {
-      className: 'btn-secondary queue-resume-item-btn',
-      title: 'Продолжить',
-      attrs: `data-queue-id="${item.id}"`,
-    });
-  } else if (item.status === 'remote') {
-    controlBtn = AppIcons.iconButton('pause', {
-      className: 'btn-secondary queue-pause-item-btn',
-      title: 'Пауза на сервере',
-      attrs: `data-queue-id="${item.id}"`,
-    });
-  }
-
   const progressClass = item.status === 'uploading' ? '' : ' upload-queue-item-progress--idle';
   const progressHtml = ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
     ? `<div class="upload-queue-item-progress${progressClass}"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
     : '';
 
-  const actionsHtml = [
-    item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : '',
-    controlBtn,
-    ['pending', 'uploading', 'paused', 'ready', 'remote'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
-  ].filter(Boolean).join('');
-
   const progressDetail = formatQueueItemProgress(item);
   const progressDetailHtml = progressDetail
     ? `<div class="upload-queue-item-progress-meta">${escapeHtml(progressDetail)}</div>`
     : '';
+  const toolbarHtml = buildQueueItemToolbar(item);
 
   return `
     <li class="upload-queue-item${activeClass}${statusClass}" data-queue-id="${item.id}" data-status="${item.status}">
@@ -367,10 +360,10 @@ function buildUploadQueueItemHtml(item, currentItemId) {
             <span class="upload-queue-item-status">${escapeHtml(formatQueueItemStatus(item))}</span>
           </div>
         </div>
-        ${actionsHtml ? `<div class="upload-queue-item-actions icon-actions">${actionsHtml}</div>` : ''}
       </div>
       ${progressDetailHtml}
       ${progressHtml}
+      ${toolbarHtml}
       ${errorHtml}
     </li>
   `;
@@ -394,8 +387,8 @@ function bindUploadQueueItemEvents(root = uploadQueueList) {
 
 function isUploadQueueProgressOnlyUpdate(prev, state) {
   if (!prev || prev.items.length !== state.items.length) return false;
-  if (prev.currentItemId !== state.currentItemId) return false;
   if (prev.queuePaused !== state.queuePaused) return false;
+  if (prev.activeUploadCount !== state.activeUploadCount) return false;
   return state.items.every((item, index) => {
     const previous = prev.items[index];
     return previous
@@ -422,9 +415,8 @@ function renderUploadQueue(state) {
     state.items.forEach((item) => {
       const row = uploadQueueList.querySelector(`[data-queue-id="${item.id}"]`);
       if (!row) return;
-      row.classList.toggle('active', item.id === state.currentItemId);
+      row.className = `upload-queue-item${item.status === 'uploading' ? ' active' : ''} upload-queue-item--${item.status}`;
       row.dataset.status = item.status;
-      row.className = `upload-queue-item${item.id === state.currentItemId ? ' active' : ''} upload-queue-item--${item.status}`;
 
       const badge = formatQueueItemBadge(item);
       let badgeEl = row.querySelector('.upload-queue-badge');
@@ -455,14 +447,14 @@ function renderUploadQueue(state) {
       if (fill) fill.style.width = `${item.progress || 0}%`;
     });
     lastUploadQueueSnapshot = {
-      currentItemId: state.currentItemId,
       queuePaused: state.queuePaused,
+      activeUploadCount: state.activeUploadCount,
       items: state.items.map((item) => ({ ...item })),
     };
     return;
   }
 
-  uploadQueueList.innerHTML = state.items.map((item) => buildUploadQueueItemHtml(item, state.currentItemId)).join('');
+  uploadQueueList.innerHTML = state.items.map((item) => buildUploadQueueItemHtml(item)).join('');
   bindUploadQueueItemEvents();
 
   if (state.queuePaused) {
@@ -474,8 +466,8 @@ function renderUploadQueue(state) {
   }
 
   lastUploadQueueSnapshot = {
-    currentItemId: state.currentItemId,
     queuePaused: state.queuePaused,
+    activeUploadCount: state.activeUploadCount,
     items: state.items.map((item) => ({ ...item })),
   };
 }
@@ -525,7 +517,7 @@ async function restoreActiveUploads() {
 function resetDropZoneHint() {
   const dropHint = dropZone.querySelector('.hint');
   if (dropHint) {
-    dropHint.textContent = 'или выберите несколько — загрузка по очереди';
+    dropHint.textContent = 'или выберите несколько — до 3 файлов параллельно';
   }
 }
 
