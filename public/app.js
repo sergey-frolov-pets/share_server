@@ -302,14 +302,43 @@ function formatQueueItemStatus(item) {
     : label;
 }
 
+function formatQueueItemBadge(item) {
+  if (typeof uploadQueue.formatItemBadge === 'function') {
+    return uploadQueue.formatItemBadge(item);
+  }
+  return null;
+}
+
 function buildUploadQueueItemHtml(item, currentItemId) {
   const activeClass = item.id === currentItemId ? ' active' : '';
+  const statusClass = ` upload-queue-item--${item.status}`;
+  const badge = formatQueueItemBadge(item);
+  const badgeHtml = badge
+    ? `<span class="upload-queue-badge upload-queue-badge--${badge.className}">${escapeHtml(badge.text)}</span>`
+    : '';
   const progressHtml = ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
     ? `<div class="upload-queue-item-progress"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
     : '';
   const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
+
+  let controlBtn = '';
+  if (item.status === 'uploading' || (item.status === 'pending' && item.file)) {
+    controlBtn = AppIcons.iconButton('pause', {
+      className: 'btn-secondary queue-pause-item-btn',
+      title: 'Пауза',
+      attrs: `data-queue-id="${item.id}"`,
+    });
+  } else if (item.status === 'paused') {
+    controlBtn = AppIcons.iconButton('play', {
+      className: 'btn-secondary queue-resume-item-btn',
+      title: 'Продолжить',
+      attrs: `data-queue-id="${item.id}"`,
+    });
+  }
+
   const actionsHtml = [
     item.status === 'ready' ? AppIcons.iconButton('link', { className: 'queue-select-btn', title: 'Создать ссылку', attrs: `data-queue-id="${item.id}"` }) : '',
+    controlBtn,
     ['pending', 'uploading', 'paused', 'ready', 'remote'].includes(item.status) ? AppIcons.iconButton('cancel', { className: 'btn-secondary queue-cancel-btn', title: 'Убрать', attrs: `data-queue-id="${item.id}"` }) : '',
   ].filter(Boolean).join('');
 
@@ -319,10 +348,13 @@ function buildUploadQueueItemHtml(item, currentItemId) {
     : '';
 
   return `
-    <li class="upload-queue-item${activeClass}" data-queue-id="${item.id}" data-status="${item.status}">
+    <li class="upload-queue-item${activeClass}${statusClass}" data-queue-id="${item.id}" data-status="${item.status}">
       <div class="upload-queue-item-row">
         <div class="upload-queue-item-text">
-          <span class="upload-queue-item-name">${escapeHtml(item.name)}</span>
+          <div class="upload-queue-item-title-row">
+            <span class="upload-queue-item-name">${escapeHtml(item.name)}</span>
+            ${badgeHtml}
+          </div>
           <div class="upload-queue-item-sub">
             <span class="upload-queue-item-status">${escapeHtml(formatQueueItemStatus(item))}</span>
           </div>
@@ -343,6 +375,12 @@ function bindUploadQueueItemEvents(root = uploadQueueList) {
   root.querySelectorAll('.queue-cancel-btn').forEach((btn) => {
     btn.addEventListener('click', () => uploadQueue.cancelItem(btn.dataset.queueId));
   });
+  root.querySelectorAll('.queue-pause-item-btn').forEach((btn) => {
+    btn.addEventListener('click', () => uploadQueue.pauseItem(btn.dataset.queueId));
+  });
+  root.querySelectorAll('.queue-resume-item-btn').forEach((btn) => {
+    btn.addEventListener('click', () => uploadQueue.resumeItem(btn.dataset.queueId));
+  });
   initIconButtons(root);
 }
 
@@ -358,9 +396,7 @@ function isUploadQueueProgressOnlyUpdate(prev, state) {
       && previous.error === item.error
       && previous.uploadId === item.uploadId
       && previous.sessionId === item.sessionId
-      && previous.serverStatus === item.serverStatus
-      && previous.bytesReceived === item.bytesReceived
-      && previous.etaSeconds === item.etaSeconds;
+      && previous.serverStatus === item.serverStatus;
   });
 }
 
@@ -379,6 +415,26 @@ function renderUploadQueue(state) {
       const row = uploadQueueList.querySelector(`[data-queue-id="${item.id}"]`);
       if (!row) return;
       row.classList.toggle('active', item.id === state.currentItemId);
+      row.dataset.status = item.status;
+      row.className = `upload-queue-item${item.id === state.currentItemId ? ' active' : ''} upload-queue-item--${item.status}`;
+
+      const badge = formatQueueItemBadge(item);
+      let badgeEl = row.querySelector('.upload-queue-badge');
+      if (badge) {
+        if (!badgeEl) {
+          const titleRow = row.querySelector('.upload-queue-item-title-row');
+          if (titleRow) {
+            titleRow.insertAdjacentHTML('beforeend', `<span class="upload-queue-badge upload-queue-badge--${badge.className}">${escapeHtml(badge.text)}</span>`);
+            badgeEl = row.querySelector('.upload-queue-badge');
+          }
+        } else {
+          badgeEl.className = `upload-queue-badge upload-queue-badge--${badge.className}`;
+          badgeEl.textContent = badge.text;
+        }
+      } else if (badgeEl) {
+        badgeEl.remove();
+      }
+
       const statusEl = row.querySelector('.upload-queue-item-status');
       if (statusEl) statusEl.textContent = formatQueueItemStatus(item);
       const progressMetaEl = row.querySelector('.upload-queue-item-progress-meta');

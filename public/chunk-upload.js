@@ -2,7 +2,7 @@
   const STORAGE_PREFIX = 'shareChunkUpload:';
   const MAX_RETRIES = 5;
   const RETRY_BASE_MS = 2000;
-  const PROGRESS_EMIT_MS = 100;
+  const PROGRESS_EMIT_MS = 50;
 
   function storageKey(apiPrefix, file) {
     return `${STORAGE_PREFIX}${apiPrefix}:${file.name}:${file.size}:${file.lastModified}`;
@@ -278,6 +278,17 @@
         body: JSON.stringify({}),
       }).catch(() => {});
       this.emitStatus('Пауза', 'uploading');
+    }
+
+    async unpause() {
+      if (!this.session?.sessionId || this.cancelled) return;
+      this.paused = false;
+      this.waitingForResume = false;
+      await this.api(`${this.apiPrefix}/resume/${this.session.sessionId}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }).catch(() => {});
+      this.emitStatus('Загрузка…', 'uploading');
     }
 
     async resumeUpload() {
