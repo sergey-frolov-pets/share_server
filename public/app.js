@@ -33,6 +33,8 @@ const downloadPasswordInput = document.getElementById('download-password');
 const fileDescriptionInput = document.getElementById('file-description');
 const allowedEmailsInput = document.getElementById('allowed-emails');
 const allowedDomainsInput = document.getElementById('allowed-domains');
+const accessEmailsHint = document.getElementById('access-emails-hint');
+const accessDomainsHint = document.getElementById('access-domains-hint');
 const shareBtn = document.getElementById('share-btn');
 const shareError = document.getElementById('share-error');
 const result = document.getElementById('result');
@@ -58,6 +60,8 @@ const updateDownloadPasswordInput = document.getElementById('update-download-pas
 const updateFileDescriptionInput = document.getElementById('update-file-description');
 const updateAllowedEmailsInput = document.getElementById('update-allowed-emails');
 const updateAllowedDomainsInput = document.getElementById('update-allowed-domains');
+const updateAccessEmailsHint = document.getElementById('update-access-emails-hint');
+const updateAccessDomainsHint = document.getElementById('update-access-domains-hint');
 const resetLinkCountInput = document.getElementById('reset-link-count');
 const updateBtn = document.getElementById('update-btn');
 const updateError = document.getElementById('update-error');
@@ -86,6 +90,34 @@ let updateUploadPromise = null;
 let updateUploader = null;
 let nameCheckTimeout = null;
 let editingShortName = null;
+let smtpConfigured = false;
+
+const SMTP_ACCESS_UNAVAILABLE_HINT = 'Недоступно без настроенного SMTP на сервере';
+
+function updateAccessRestrictionFields() {
+  const enabled = smtpConfigured;
+  allowedEmailsInput.disabled = !enabled;
+  allowedDomainsInput.disabled = !enabled;
+  updateAllowedEmailsInput.disabled = !enabled;
+  updateAllowedDomainsInput.disabled = !enabled;
+
+  const hints = [accessEmailsHint, accessDomainsHint, updateAccessEmailsHint, updateAccessDomainsHint];
+  hints.forEach((el) => {
+    if (!el) return;
+    if (enabled) {
+      el.textContent = '';
+      hide(el);
+    } else {
+      el.textContent = SMTP_ACCESS_UNAVAILABLE_HINT;
+      show(el);
+    }
+  });
+
+  if (!enabled) {
+    allowedEmailsInput.value = '';
+    allowedDomainsInput.value = '';
+  }
+}
 
 function initIconButtons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((btn) => {
@@ -432,6 +464,8 @@ async function loadAdminPanel() {
         smtpStatusHint.className = 'error';
       }
     }
+    smtpConfigured = Boolean(stats.smtpConfigured);
+    updateAccessRestrictionFields();
     globalMaxStorageMb.value = stats.maxStorageMb ?? '';
 
     adminStats.innerHTML = [
@@ -697,6 +731,9 @@ loginForm.addEventListener('submit', async (e) => {
         password: document.getElementById('login-password').value,
       }),
     });
+    const me = await api('/api/me');
+    smtpConfigured = Boolean(me.smtpConfigured);
+    updateAccessRestrictionFields();
     showUpload();
     await restoreActiveUploads();
   } catch (err) {
@@ -873,8 +910,10 @@ function showUpload() {
 async function init() {
   initIconButtons();
   updateNamePreview();
-  const { authenticated } = await api('/api/me');
-  if (authenticated) {
+  const me = await api('/api/me');
+  if (me.authenticated) {
+    smtpConfigured = Boolean(me.smtpConfigured);
+    updateAccessRestrictionFields();
     showUpload();
     await restoreActiveUploads();
   } else {
