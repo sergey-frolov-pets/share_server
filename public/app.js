@@ -540,11 +540,77 @@ function formatDownloadLimit(count, max) {
   return max ? `${count}/${max}` : `${count}/∞`;
 }
 
+function parseServerDateTime(value) {
+  if (!value) return null;
+  const normalized = String(value).includes('T') ? value : String(value).replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function formatCompactDateTime(value) {
+  const date = parseServerDateTime(value);
+  if (!date) return value || '';
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yy = String(date.getFullYear()).slice(-2);
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${dd}.${mm}.${yy} ${hh}:${min}`;
+}
+
+function formatCompactDate(value) {
+  const date = parseServerDateTime(value);
+  if (!date) return value || '';
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${dd}.${mm}.${yy}`;
+}
+
 function formatExpiresLabel(expiresAt) {
   if (!expiresAt) return 'без срока';
-  const date = new Date(expiresAt);
-  if (Number.isNaN(date.getTime())) return expiresAt;
-  return date.toLocaleDateString('ru-RU');
+  return formatCompactDate(expiresAt);
+}
+
+function toDateInputValue(expiresAt) {
+  if (!expiresAt) return '';
+  const date = parseServerDateTime(expiresAt);
+  if (!date) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatLinkRemainingValue(link) {
+  if (link.maxDownloads == null) return '';
+  return String(Math.max(0, link.maxDownloads - link.downloadCount));
+}
+
+function getLinkRowSnapshot(row) {
+  return {
+    shortName: row.querySelector('.admin-link-short-name').value.trim(),
+    remaining: row.querySelector('.admin-link-remaining').value.trim(),
+    expires: row.querySelector('.admin-link-expires').value,
+  };
+}
+
+function bindLinkRowChangeDetection(row, baseline) {
+  const saveBtn = row.querySelector('.admin-link-save');
+  const inputs = row.querySelectorAll('input');
+  const check = () => {
+    const current = getLinkRowSnapshot(row);
+    const changed = current.shortName !== baseline.shortName
+      || current.remaining !== baseline.remaining
+      || current.expires !== baseline.expires;
+    saveBtn.disabled = !changed;
+  };
+  inputs.forEach((input) => {
+    input.addEventListener('input', check);
+    input.addEventListener('change', check);
+  });
+  check();
 }
 
 function switchAdminAssetsTab(tab) {
@@ -595,20 +661,24 @@ function renderAdminAssetsStats() {
 
 function renderAdminFilesTable() {
   adminFilesBody.innerHTML = adminAssetsCache.map((file) => {
-    const linksStat = `${file.linkCount} (активных ${file.activeLinkCount})`;
+    const linksStat = `${file.linkCount} (активн. ${file.activeLinkCount})`;
     const downloadsStat = formatDownloadLimit(file.fileDownloadCount || 0, file.fileMaxDownloads);
-    const meta = `${file.createdAt}${file.isChunked ? ' · чанки' : ''}${file.fileDeleteAt ? ` · удаление ${formatExpiresLabel(file.fileDeleteAt)}` : ''}`;
+    const metaParts = [formatCompactDateTime(file.createdAt)];
+    if (file.fileDeleteAt) {
+      metaParts.push(`до ${formatCompactDate(file.fileDeleteAt)}`);
+    }
+    const meta = metaParts.join(' · ');
 
     return `
       <tr data-file-id="${file.id}">
-        <td>
+        <td data-label="Файл">
           <input type="text" class="admin-file-name" value="${escapeHtml(file.originalName)}">
-          <span class="hint">${escapeHtml(meta)}</span>
+          <span class="hint admin-file-meta">${escapeHtml(meta)}</span>
         </td>
-        <td>${file.sizeMb ?? 0} МБ</td>
-        <td>${downloadsStat}</td>
-        <td>${linksStat}</td>
-        <td>
+        <td data-label="Размер" class="admin-cell-num">${file.sizeMb ?? 0} МБ</td>
+        <td data-label="Скачиваний" class="admin-cell-num">${downloadsStat}</td>
+        <td data-label="Ссылки" class="admin-cell-num">${linksStat}</td>
+        <td data-label="Действия">
           <div class="admin-row-actions icon-actions">
             ${AppIcons.iconButton('link', { className: 'admin-file-add-link', title: 'Добавить ссылку' })}
             ${AppIcons.iconButton('download', { className: 'admin-file-download', title: 'Скачать' })}
@@ -642,27 +712,51 @@ function renderAdminLinksTable() {
 
   adminLinksBody.innerHTML = rows.length
     ? rows.map(({ link, file }) => {
-      const limitText = `${formatDownloadLimit(link.downloadCount, link.maxDownloads)} · ${link.expiresAt ? formatExpiresLabel(link.expiresAt) : 'без срока'}`;
+      const remainingValue = formatLinkRemainingValue(link);
+      const expiresValue = toDateInputValue(link.expiresAt);
       return `
         <tr data-link-id="${link.id}" data-file-id="${file.id}">
-          <td>
+          <td data-label="Ссылка">
             <input type="text" class="admin-link-short-name" value="${escapeHtml(link.shortName)}">
             <a class="hint admin-link-url" href="${escapeHtml(link.shareUrl)}" target="_blank" rel="noopener">${escapeHtml(link.shareUrl)}</a>
           </td>
-          <td><span class="admin-link-file-name">${escapeHtml(file.originalName)}</span></td>
-          <td>${link.downloadCount}</td>
-          <td>${limitText}</td>
-          <td><span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? 'активна' : 'неактивна'}</span></td>
-          <td>
+          <td data-label="Файл">
+            <span class="admin-link-file-name">${escapeHtml(file.originalName)}</span>
+          </td>
+          <td data-label="Скачано" class="admin-cell-num">${link.downloadCount}</td>
+          <td data-label="Осталось">
+            <input type="number" class="admin-link-remaining" min="0" step="1" placeholder="∞" value="${escapeHtml(remainingValue)}">
+          </td>
+          <td data-label="До">
+            <input type="date" class="admin-link-expires" value="${escapeHtml(expiresValue)}">
+          </td>
+          <td data-label="Статус">
+            <span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? 'активна' : 'неактивна'}</span>
+          </td>
+          <td data-label="Действия">
             <div class="admin-row-actions icon-actions">
-              ${AppIcons.iconButton('save', { className: 'admin-link-save', title: 'Сохранить ссылку' })}
+              ${AppIcons.iconButton('save', { className: 'admin-link-save', title: 'Обновить ссылку', attrs: 'disabled' })}
               ${AppIcons.iconButton('delete', { className: 'btn-danger admin-link-delete', title: 'Удалить ссылку' })}
             </div>
           </td>
         </tr>
       `;
     }).join('')
-    : '<tr><td colspan="6" class="hint">Нет ссылок — добавьте из таблицы файлов</td></tr>';
+    : '<tr><td colspan="7" class="hint admin-assets-empty">Нет ссылок — добавьте из таблицы файлов</td></tr>';
+
+  adminLinksBody.querySelectorAll('tr[data-link-id]').forEach((row) => {
+    const linkId = parseInt(row.dataset.linkId, 10);
+    const link = adminAssetsCache
+      .flatMap((file) => file.links || [])
+      .find((entry) => entry.id === linkId);
+    if (link) {
+      bindLinkRowChangeDetection(row, {
+        shortName: link.shortName,
+        remaining: formatLinkRemainingValue(link),
+        expires: toDateInputValue(link.expiresAt),
+      });
+    }
+  });
 
   adminLinksBody.querySelectorAll('.admin-link-save').forEach((btn) => {
     btn.addEventListener('click', saveAdminLinkRow);
@@ -746,11 +840,17 @@ async function saveAdminLinkRow(e) {
   const row = e.target.closest('tr');
   const linkId = row.dataset.linkId;
   const shortName = row.querySelector('.admin-link-short-name').value.trim();
+  const linkRemainingDownloads = row.querySelector('.admin-link-remaining').value.trim();
+  const linkExpiresAt = row.querySelector('.admin-link-expires').value;
 
   try {
     const data = await api(`/api/admin/links/${linkId}`, {
       method: 'PUT',
-      body: JSON.stringify({ shortName }),
+      body: JSON.stringify({
+        shortName,
+        linkRemainingDownloads,
+        linkExpiresAt,
+      }),
     });
     setMessage(adminFilesMessage, 'Ссылка обновлена', 'success');
     if (data.file) {

@@ -778,6 +778,22 @@ function updateLinkShortNameById(linkId, shortName) {
   `).run({ linkId, shortName });
 }
 
+function updateLinkById(linkId, fields) {
+  db.prepare(`
+    UPDATE links
+    SET short_name = @shortName,
+        link_max_downloads = @linkMaxDownloads,
+        link_expires_at = @linkExpiresAt,
+        updated_at = datetime('now')
+    WHERE id = @linkId
+  `).run({
+    linkId,
+    shortName: fields.shortName,
+    linkMaxDownloads: fields.linkMaxDownloads,
+    linkExpiresAt: fields.linkExpiresAt,
+  });
+}
+
 function touchLinksUpdatedAt(storedFileId) {
   db.prepare(`
     UPDATE links SET updated_at = datetime('now') WHERE stored_file_id = ?
@@ -871,6 +887,7 @@ module.exports = {
   getLinksForStoredFile,
   updateStoredFileRename,
   updateLinkShortNameById,
+  updateLinkById,
   touchLinksUpdatedAt,
   getLinkById,
   deleteLinkById,

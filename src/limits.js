@@ -15,6 +15,29 @@ function daysToDatetime(days) {
   return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+function parseRemainingDownloads(value, downloadCount) {
+  if (value === null || value === undefined || value === '') {
+    return { value: null };
+  }
+  const num = parseInt(value, 10);
+  if (!Number.isFinite(num) || num < 0) {
+    return { error: 'Остаток скачиваний: целое число ≥ 0 или пусто (∞)' };
+  }
+  return { value: downloadCount + num };
+}
+
+function parseExpiresDateInput(value) {
+  if (value === null || value === undefined || value === '') {
+    return { value: null };
+  }
+  const trimmed = String(value).trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) {
+    return { error: 'Некорректная дата срока ссылки' };
+  }
+  return { value: `${match[1]}-${match[2]}-${match[3]} 23:59:59` };
+}
+
 function parseLimitFields(body, prefix) {
   const maxDownloadsKey = `${prefix}MaxDownloads`;
   const daysKey = `${prefix}Days`;
@@ -76,6 +99,8 @@ function isStoredFileAvailable(row) {
 module.exports = {
   parseOptionalPositiveInt,
   daysToDatetime,
+  parseRemainingDownloads,
+  parseExpiresDateInput,
   parseLimitFields,
   isLinkAvailable,
   isLinkExhausted,
