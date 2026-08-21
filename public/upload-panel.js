@@ -300,8 +300,11 @@
         ? `<span class="upload-queue-badge upload-queue-badge--${badge.className}">${escapeHtml(badge.text)}</span>`
         : '';
       const progressDetail = this.queue.formatItemProgressDetail(item);
+      const progressMetaClass = item.status === S.UPLOADING
+        ? 'upload-queue-item-progress-meta upload-queue-item-progress-meta--active'
+        : 'upload-queue-item-progress-meta';
       const progressDetailHtml = progressDetail
-        ? `<div class="upload-queue-item-progress-meta">${escapeHtml(progressDetail)}</div>`
+        ? `<div class="${progressMetaClass}">${escapeHtml(progressDetail)}</div>`
         : '';
       const progressHtml = [S.PENDING, S.UPLOADING, S.PAUSED, S.WAITING_FILE].includes(item.status)
         ? `<div class="upload-queue-item-progress${item.status === S.UPLOADING ? '' : ' upload-queue-item-progress--idle'}"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
@@ -318,9 +321,7 @@
                 <span class="upload-queue-item-name">${escapeHtml(item.name)}</span>
                 ${badgeHtml}
               </div>
-              <div class="upload-queue-item-sub">
-                <span class="upload-queue-item-status">${escapeHtml(this.queue.formatItemStatus(item))}</span>
-              </div>
+              ${this.queue.formatItemStatus(item) ? `<div class="upload-queue-item-sub"><span class="upload-queue-item-status">${escapeHtml(this.queue.formatItemStatus(item))}</span></div>` : ''}
             </div>
           </div>
           ${progressDetailHtml}
@@ -358,12 +359,33 @@
       }
 
       const statusEl = row.querySelector('.upload-queue-item-status');
-      if (statusEl) statusEl.textContent = this.queue.formatItemStatus(item);
+      const statusText = this.queue.formatItemStatus(item);
+      const subEl = row.querySelector('.upload-queue-item-sub');
+      if (statusText) {
+        if (statusEl) statusEl.textContent = statusText;
+        else if (subEl) {
+          subEl.innerHTML = `<span class="upload-queue-item-status">${escapeHtml(statusText)}</span>`;
+        } else {
+          const textEl = row.querySelector('.upload-queue-item-text');
+          if (textEl) {
+            textEl.insertAdjacentHTML(
+              'beforeend',
+              `<div class="upload-queue-item-sub"><span class="upload-queue-item-status">${escapeHtml(statusText)}</span></div>`,
+            );
+          }
+        }
+        if (subEl) subEl.classList.remove('hidden');
+      } else if (subEl) {
+        subEl.remove();
+      }
 
       const progressMetaEl = row.querySelector('.upload-queue-item-progress-meta');
       const progressDetail = this.queue.formatItemProgressDetail(item);
       if (progressMetaEl) {
         progressMetaEl.textContent = progressDetail;
+        progressMetaEl.className = item.status === S.UPLOADING
+          ? 'upload-queue-item-progress-meta upload-queue-item-progress-meta--active'
+          : 'upload-queue-item-progress-meta';
         progressMetaEl.classList.toggle('hidden', !progressDetail);
       }
 

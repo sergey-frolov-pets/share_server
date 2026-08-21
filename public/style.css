@@ -792,8 +792,60 @@ button[type="submit"]:disabled {
   line-height: 1.3;
 }
 
+.upload-queue-item-progress-meta--active {
+  color: var(--accent);
+}
+
 .upload-queue-item-progress-meta.hidden {
   display: none;
+}
+
+.admin-assets-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.admin-assets-tab {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.admin-assets-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #f8fbff;
+}
+
+.admin-assets-stats {
+  margin-bottom: 10px;
+}
+
+.admin-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-link-url {
+  display: block;
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.admin-link-file-name {
+  font-size: 0.875rem;
+}
+
+.admin-file-name,
+.admin-link-short-name {
+  width: 100%;
+  min-width: 120px;
+  box-sizing: border-box;
 }
 
 .upload-queue-item-status {

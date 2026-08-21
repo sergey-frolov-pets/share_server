@@ -76,6 +76,13 @@ const queueResumeBtn = document.getElementById('queue-resume-btn');
 const queueClearBtn = document.getElementById('queue-clear-btn');
 const adminFilesBody = document.getElementById('admin-files-body');
 const adminFilesMessage = document.getElementById('admin-files-message');
+const adminFilesStats = document.getElementById('admin-files-stats');
+const adminLinksBody = document.getElementById('admin-links-body');
+const adminLinksStats = document.getElementById('admin-links-stats');
+const adminFilesPanel = document.getElementById('admin-files-panel');
+const adminLinksPanel = document.getElementById('admin-links-panel');
+const adminAssetsTabFiles = document.getElementById('admin-assets-tab-files');
+const adminAssetsTabLinks = document.getElementById('admin-assets-tab-links');
 const downloadQueueEl = document.getElementById('download-queue');
 const downloadQueueList = document.getElementById('download-queue-list');
 const downloadQueuePauseBtn = document.getElementById('download-queue-pause-btn');
@@ -91,6 +98,7 @@ let updateUploader = null;
 let nameCheckTimeout = null;
 let editingShortName = null;
 let smtpConfigured = false;
+let adminAssetsCache = [];
 
 const SMTP_ACCESS_UNAVAILABLE_HINT = 'Недоступно без настроенного SMTP на сервере';
 
@@ -528,43 +536,84 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-async function loadAdminFiles() {
-  setMessage(adminFilesMessage, null);
-  const { files } = await api('/api/admin/files');
+function formatDownloadLimit(count, max) {
+  return max ? `${count}/${max}` : `${count}/∞`;
+}
 
-  adminFilesBody.innerHTML = files.map((file) => {
-    const linksHtml = file.links.length
-      ? file.links.map((link) => `
-          <div class="admin-file-link-row" data-link-id="${link.id}">
-            <input type="text" class="admin-link-short-name" value="${escapeHtml(link.shortName)}" title="Короткое имя ссылки">
-            <span class="upload-queue-item-meta">
-              ${link.shareUrl}
-              <span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? 'активна' : 'неактивна'}</span>
-            </span>
-          </div>
-        `).join('')
-      : '<span class="hint">Нет ссылок</span>';
+function formatExpiresLabel(expiresAt) {
+  if (!expiresAt) return 'без срока';
+  const date = new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) return expiresAt;
+  return date.toLocaleDateString('ru-RU');
+}
 
-    const warning = file.activeLinkCount > 0
-      ? `<div class="upload-queue-item-meta">Активных ссылок: ${file.activeLinkCount}</div>`
-      : '';
+function switchAdminAssetsTab(tab) {
+  const isFiles = tab === 'files';
+  adminAssetsTabFiles.classList.toggle('active', isFiles);
+  adminAssetsTabLinks.classList.toggle('active', !isFiles);
+  if (isFiles) {
+    show(adminFilesPanel);
+    hide(adminLinksPanel);
+  } else {
+    hide(adminFilesPanel);
+    show(adminLinksPanel);
+  }
+}
+
+function updateAdminAssetsCache(files) {
+  adminAssetsCache = files;
+  renderAdminAssetsStats();
+  renderAdminFilesTable();
+  renderAdminLinksTable();
+}
+
+function renderAdminAssetsStats() {
+  const files = adminAssetsCache;
+  const allLinks = files.flatMap((file) => file.links || []);
+  const activeLinks = allLinks.filter((link) => link.active);
+  const totalDownloads = files.reduce((sum, file) => sum + (file.fileDownloadCount || 0), 0);
+  const linkDownloads = allLinks.reduce((sum, link) => sum + (link.downloadCount || 0), 0);
+  const totalSizeMb = files.reduce((sum, file) => sum + (file.sizeMb || 0), 0);
+
+  if (adminFilesStats) {
+    adminFilesStats.textContent = [
+      `Файлов: ${files.length}`,
+      `Объём: ${totalSizeMb.toFixed(1)} МБ`,
+      `Скачиваний файлов: ${totalDownloads}`,
+      `Ссылок: ${allLinks.length} (активных ${activeLinks.length})`,
+    ].join(' · ');
+  }
+
+  if (adminLinksStats) {
+    adminLinksStats.textContent = [
+      `Ссылок: ${allLinks.length}`,
+      `Активных: ${activeLinks.length}`,
+      `Скачиваний по ссылкам: ${linkDownloads}`,
+    ].join(' · ');
+  }
+}
+
+function renderAdminFilesTable() {
+  adminFilesBody.innerHTML = adminAssetsCache.map((file) => {
+    const linksStat = `${file.linkCount} (активных ${file.activeLinkCount})`;
+    const downloadsStat = formatDownloadLimit(file.fileDownloadCount || 0, file.fileMaxDownloads);
+    const meta = `${file.createdAt}${file.isChunked ? ' · чанки' : ''}${file.fileDeleteAt ? ` · удаление ${formatExpiresLabel(file.fileDeleteAt)}` : ''}`;
 
     return `
       <tr data-file-id="${file.id}">
         <td>
-          <div class="admin-file-actions">
-            <input type="text" class="admin-file-name" value="${escapeHtml(file.originalName)}">
-            ${warning}
-            <span class="hint">${file.createdAt}${file.isChunked ? ' · чанки' : ''}</span>
-          </div>
+          <input type="text" class="admin-file-name" value="${escapeHtml(file.originalName)}">
+          <span class="hint">${escapeHtml(meta)}</span>
         </td>
         <td>${file.sizeMb ?? 0} МБ</td>
-        <td><div class="admin-file-links">${linksHtml}</div></td>
+        <td>${downloadsStat}</td>
+        <td>${linksStat}</td>
         <td>
-          <div class="admin-file-actions icon-actions">
-            ${AppIcons.iconButton('download', { className: 'admin-file-download', title: 'Скачать', attrs: `data-file-id="${file.id}"` })}
-            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: 'Сохранить' })}
-            ${AppIcons.iconButton('delete', { className: 'btn-danger admin-file-delete', title: 'Удалить' })}
+          <div class="admin-row-actions icon-actions">
+            ${AppIcons.iconButton('link', { className: 'admin-file-add-link', title: 'Добавить ссылку' })}
+            ${AppIcons.iconButton('download', { className: 'admin-file-download', title: 'Скачать' })}
+            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: 'Сохранить файл' })}
+            ${AppIcons.iconButton('delete', { className: 'btn-danger admin-file-delete', title: 'Удалить файл' })}
           </div>
         </td>
       </tr>
@@ -578,38 +627,174 @@ async function loadAdminFiles() {
     btn.addEventListener('click', deleteAdminFileRow);
   });
   adminFilesBody.querySelectorAll('.admin-file-download').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      const row = e.target.closest('tr');
-      const fileId = parseInt(row.dataset.fileId, 10);
-      const originalName = row.querySelector('.admin-file-name').value.trim();
-      const sizeText = row.querySelector('td:nth-child(2)')?.textContent || '';
-      const sizeMb = parseFloat(sizeText) || 0;
-      enqueueDownload({
-        id: fileId,
-        originalName,
-        sizeBytes: Math.round(sizeMb * 1024 * 1024),
-      });
-    });
+    btn.addEventListener('click', downloadAdminFileRow);
+  });
+  adminFilesBody.querySelectorAll('.admin-file-add-link').forEach((btn) => {
+    btn.addEventListener('click', addAdminFileLink);
   });
   initIconButtons(adminFilesBody);
+}
+
+function renderAdminLinksTable() {
+  const rows = adminAssetsCache.flatMap((file) => (
+    (file.links || []).map((link) => ({ link, file }))
+  ));
+
+  adminLinksBody.innerHTML = rows.length
+    ? rows.map(({ link, file }) => {
+      const limitText = `${formatDownloadLimit(link.downloadCount, link.maxDownloads)} · ${link.expiresAt ? formatExpiresLabel(link.expiresAt) : 'без срока'}`;
+      return `
+        <tr data-link-id="${link.id}" data-file-id="${file.id}">
+          <td>
+            <input type="text" class="admin-link-short-name" value="${escapeHtml(link.shortName)}">
+            <a class="hint admin-link-url" href="${escapeHtml(link.shareUrl)}" target="_blank" rel="noopener">${escapeHtml(link.shareUrl)}</a>
+          </td>
+          <td><span class="admin-link-file-name">${escapeHtml(file.originalName)}</span></td>
+          <td>${link.downloadCount}</td>
+          <td>${limitText}</td>
+          <td><span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? 'активна' : 'неактивна'}</span></td>
+          <td>
+            <div class="admin-row-actions icon-actions">
+              ${AppIcons.iconButton('save', { className: 'admin-link-save', title: 'Сохранить ссылку' })}
+              ${AppIcons.iconButton('delete', { className: 'btn-danger admin-link-delete', title: 'Удалить ссылку' })}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('')
+    : '<tr><td colspan="6" class="hint">Нет ссылок — добавьте из таблицы файлов</td></tr>';
+
+  adminLinksBody.querySelectorAll('.admin-link-save').forEach((btn) => {
+    btn.addEventListener('click', saveAdminLinkRow);
+  });
+  adminLinksBody.querySelectorAll('.admin-link-delete').forEach((btn) => {
+    btn.addEventListener('click', deleteAdminLinkRow);
+  });
+  initIconButtons(adminLinksBody);
+}
+
+async function loadAdminFiles() {
+  setMessage(adminFilesMessage, null);
+  const { files } = await api('/api/admin/files');
+  updateAdminAssetsCache(files);
+}
+
+function downloadAdminFileRow(e) {
+  const row = e.target.closest('tr');
+  const fileId = parseInt(row.dataset.fileId, 10);
+  const file = adminAssetsCache.find((entry) => entry.id === fileId);
+  if (!file) return;
+  enqueueDownload({
+    id: fileId,
+    originalName: row.querySelector('.admin-file-name').value.trim() || file.originalName,
+    sizeBytes: file.sizeBytes || Math.round((file.sizeMb || 0) * 1024 * 1024),
+  });
 }
 
 async function saveAdminFileRow(e) {
   const row = e.target.closest('tr');
   const fileId = row.dataset.fileId;
   const originalName = row.querySelector('.admin-file-name').value.trim();
-  const links = [...row.querySelectorAll('.admin-file-link-row')].map((linkRow) => ({
-    id: parseInt(linkRow.dataset.linkId, 10),
-    shortName: linkRow.querySelector('.admin-link-short-name').value.trim(),
-  }));
 
   try {
     const data = await api(`/api/admin/files/${fileId}`, {
       method: 'PUT',
-      body: JSON.stringify({ originalName, links }),
+      body: JSON.stringify({ originalName }),
     });
-    setMessage(adminFilesMessage, data.warning || 'Файл и ссылки обновлены', data.warning ? 'error' : 'success');
-    await loadAdminFiles();
+    setMessage(adminFilesMessage, data.warning || 'Файл обновлён', data.warning ? 'error' : 'success');
+    if (data.file) {
+      adminAssetsCache = adminAssetsCache.map((entry) => (
+        entry.id === data.file.id ? data.file : entry
+      ));
+      renderAdminAssetsStats();
+      renderAdminFilesTable();
+      renderAdminLinksTable();
+    } else {
+      await loadAdminFiles();
+    }
+  } catch (err) {
+    setMessage(adminError, err.message, 'error');
+  }
+}
+
+async function addAdminFileLink(e) {
+  const row = e.target.closest('tr');
+  const fileId = row.dataset.fileId;
+
+  try {
+    const data = await api(`/api/admin/files/${fileId}/links`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    setMessage(adminFilesMessage, `Ссылка создана: ${data.shareUrl}`, 'success');
+    if (data.file) {
+      adminAssetsCache = adminAssetsCache.map((entry) => (
+        entry.id === data.file.id ? data.file : entry
+      ));
+      renderAdminAssetsStats();
+      renderAdminFilesTable();
+      renderAdminLinksTable();
+    } else {
+      await loadAdminFiles();
+    }
+  } catch (err) {
+    setMessage(adminError, err.message, 'error');
+  }
+}
+
+async function saveAdminLinkRow(e) {
+  const row = e.target.closest('tr');
+  const linkId = row.dataset.linkId;
+  const shortName = row.querySelector('.admin-link-short-name').value.trim();
+
+  try {
+    const data = await api(`/api/admin/links/${linkId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ shortName }),
+    });
+    setMessage(adminFilesMessage, 'Ссылка обновлена', 'success');
+    if (data.file) {
+      adminAssetsCache = adminAssetsCache.map((entry) => (
+        entry.id === data.file.id ? data.file : entry
+      ));
+      renderAdminAssetsStats();
+      renderAdminFilesTable();
+      renderAdminLinksTable();
+    } else {
+      await loadAdminFiles();
+    }
+  } catch (err) {
+    setMessage(adminError, err.message, 'error');
+  }
+}
+
+async function deleteAdminLinkRow(e) {
+  const row = e.target.closest('tr');
+  const linkId = parseInt(row.dataset.linkId, 10);
+  const shortName = row.querySelector('.admin-link-short-name').value.trim();
+
+  if (!window.confirm(`Удалить ссылку «${shortName}»? Файл на сервере останется.`)) {
+    return;
+  }
+
+  try {
+    const data = await api(`/api/admin/links/${linkId}`, { method: 'DELETE', body: JSON.stringify({}) });
+    setMessage(adminFilesMessage, 'Ссылка удалена', 'success');
+    if (data.file) {
+      adminAssetsCache = adminAssetsCache.map((entry) => (
+        entry.id === data.file.id ? data.file : entry
+      ));
+    } else {
+      adminAssetsCache = adminAssetsCache.map((entry) => ({
+        ...entry,
+        links: (entry.links || []).filter((link) => link.id !== linkId),
+        linkCount: (entry.links || []).filter((link) => link.id !== linkId).length,
+        activeLinkCount: (entry.links || []).filter((link) => link.id !== linkId && link.active).length,
+      }));
+    }
+    renderAdminAssetsStats();
+    renderAdminFilesTable();
+    renderAdminLinksTable();
   } catch (err) {
     setMessage(adminError, err.message, 'error');
   }
@@ -676,6 +861,8 @@ async function saveUserRow(e) {
 tabCreate.addEventListener('click', () => switchTab('create'));
 tabManage.addEventListener('click', () => switchTab('manage'));
 tabAdmin.addEventListener('click', () => switchTab('admin'));
+adminAssetsTabFiles.addEventListener('click', () => switchAdminAssetsTab('files'));
+adminAssetsTabLinks.addEventListener('click', () => switchAdminAssetsTab('links'));
 
 storageLimitForm.addEventListener('submit', async (e) => {
   e.preventDefault();

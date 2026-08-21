@@ -159,9 +159,7 @@
 
     formatItemStatus(item) {
       if (item.status === S.UPLOADING) {
-        const pct = item.progress ? `${item.progress}%` : '0%';
-        const speed = formatTransferSpeed(item.speedBps);
-        return speed ? `Загружается · ${pct} · ${speed}` : `Загружается · ${pct}`;
+        return '';
       }
 
       if (item.status === S.WAITING_FILE) {
@@ -214,14 +212,20 @@
         return `Сохранено ${formatBytes(received)} / ${formatBytes(total)} · выберите файл выше`;
       }
 
-      let detail = `${formatBytes(received)} / ${formatBytes(total)}`;
+      let detail = `${item.progress || 0}% · ${formatBytes(received)} / ${formatBytes(total)}`;
       if (item.status === S.UPLOADING) {
         const speed = formatTransferSpeed(item.speedBps);
-        detail += speed ? ` · ${speed}` : ' · …';
+        if (speed) detail += ` · ${speed}`;
+        if (item.etaSeconds != null) {
+          const eta = formatDuration(item.etaSeconds);
+          if (eta) detail += ` · осталось ${eta}`;
+        }
+        return detail;
       }
-      if (item.status === S.UPLOADING && item.etaSeconds != null) {
-        const eta = formatDuration(item.etaSeconds);
-        if (eta) detail += ` · осталось ${eta}`;
+
+      if (item.status === S.PAUSED && item.speedBps) {
+        const speed = formatTransferSpeed(item.speedBps);
+        if (speed) detail += ` · было ${speed}`;
       }
       return detail;
     }
