@@ -29,6 +29,10 @@
           <input type="password" id="user-password" autocomplete="current-password">
         </label>
 
+        <p id="registration-hint" class="hint hidden">
+          Если вы ещё не зарегистрированы, оставьте пароль пустым и нажмите «Скачать» — мы отправим ссылку на регистрацию.
+        </p>
+
         <label id="download-password-field" class="hidden">
           Пароль для скачивания
           <input type="password" id="download-password" autocomplete="off">
@@ -37,6 +41,9 @@
         <button type="submit" id="download-btn">Скачать</button>
         <p id="download-error" class="error hidden"></p>
         <p id="download-info" class="hint hidden"></p>
+        <p id="registration-resend-wrap" class="hidden">
+          <button type="button" id="resend-registration-btn" class="link-btn">Отправить ссылку на регистрацию повторно</button>
+        </p>
       </form>
 
       <div id="open-download" class="hidden">
