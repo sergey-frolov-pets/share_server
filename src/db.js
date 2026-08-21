@@ -784,6 +784,34 @@ function touchLinksUpdatedAt(storedFileId) {
   `).run(storedFileId);
 }
 
+function getLinkById(linkId) {
+  return db.prepare('SELECT * FROM links WHERE id = ?').get(linkId);
+}
+
+function deleteLinkById(linkId) {
+  db.prepare('DELETE FROM links WHERE id = ?').run(linkId);
+}
+
+function getAllLinksAdmin() {
+  return db.prepare(`
+    SELECT
+      l.id,
+      l.short_name,
+      l.stored_file_id,
+      l.link_download_count,
+      l.link_max_downloads,
+      l.link_expires_at,
+      l.created_at,
+      l.updated_at,
+      s.original_name,
+      s.file_size_bytes,
+      s.total_download_count AS file_download_count
+    FROM links l
+    JOIN stored_files s ON s.id = l.stored_file_id
+    ORDER BY l.updated_at DESC
+  `).all();
+}
+
 // Legacy aliases used by access/download until fully migrated
 function getFileByShortName(shortName) {
   return getLinkWithFile(shortName);
@@ -844,4 +872,7 @@ module.exports = {
   updateStoredFileRename,
   updateLinkShortNameById,
   touchLinksUpdatedAt,
+  getLinkById,
+  deleteLinkById,
+  getAllLinksAdmin,
 };

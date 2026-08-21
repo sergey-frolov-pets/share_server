@@ -37,6 +37,9 @@ const {
   handleAdminFileRename,
   handleAdminFileDelete,
   handleAdminFileDownload,
+  handleAdminLinkCreate,
+  handleAdminLinkUpdate,
+  handleAdminLinkDelete,
 } = require('./adminFiles');
 const {
   handleCreateShare,
@@ -218,7 +221,10 @@ app.put('/api/admin/storage', requireAdminAuth, handleAdminStorageSettings);
 app.get('/api/admin/files', requireAdminAuth, handleAdminFilesList);
 app.get('/api/admin/files/:id/download', requireAdminAuth, handleAdminFileDownload);
 app.put('/api/admin/files/:id', requireAdminAuth, handleAdminFileRename);
+app.post('/api/admin/files/:id/links', requireAdminAuth, handleAdminLinkCreate);
 app.delete('/api/admin/files/:id', requireAdminAuth, handleAdminFileDelete);
+app.put('/api/admin/links/:id', requireAdminAuth, handleAdminLinkUpdate);
+app.delete('/api/admin/links/:id', requireAdminAuth, handleAdminLinkDelete);
 
 app.get('/api/user/upload-quota', requireUserAuth, (req, res) => {
   const user = require('./db').getFullUserById(req.session.userId);

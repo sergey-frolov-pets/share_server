@@ -14,7 +14,11 @@ const {
   deleteLinksForStoredFile,
   deleteStoredFileRecord,
   isShortNameTaken,
+  createLink,
+  getLinkById,
+  deleteLinkById,
 } = require('./db');
+const { findAvailableRandomShortName } = require('./randomName');
 
 const ORIGINAL_NAME_MAX_LENGTH = 255;
 
@@ -89,6 +93,9 @@ function mapFileRow(file) {
     description: file.description || null,
     linkCount: file.link_count ?? links.length,
     activeLinkCount: activeLinks.length,
+    fileDownloadCount: file.total_download_count || 0,
+    fileMaxDownloads: file.delete_max_downloads,
+    fileDeleteAt: file.delete_at,
     fileAvailable: isStoredFileAvailable(file),
     links,
   };
@@ -138,32 +145,6 @@ function handleAdminFileRename(req, res) {
     link_expires_at: link.link_expires_at,
   }));
 
-  const linkUpdates = Array.isArray(body.links) ? body.links : [];
-  const updatedLinks = [];
-
-  for (const update of linkUpdates) {
-    const linkId = parseInt(update.id, 10);
-    const link = links.find((item) => item.id === linkId);
-    if (!link || !update.shortName) continue;
-
-    const shortError = validateShortName(update.shortName);
-    if (shortError) {
-      res.status(400).json({ error: shortError });
-      return;
-    }
-
-    const newShortName = update.shortName.trim();
-    if (newShortName === link.short_name) continue;
-
-    if (isShortNameTaken(newShortName)) {
-      res.status(409).json({ error: `Ссылка «${newShortName}» уже занята` });
-      return;
-    }
-
-    updateLinkShortNameById(linkId, newShortName);
-    updatedLinks.push({ id: linkId, shortName: newShortName });
-  }
-
   let storedPath = file.stored_path;
   if (newOriginalName !== file.original_name) {
     const newSafeName = sanitizeFileName(newOriginalName);
@@ -180,18 +161,131 @@ function handleAdminFileRename(req, res) {
     storedPath = nextPath;
     updateStoredFileRename(fileId, newOriginalName, storedPath);
     touchLinksUpdatedAt(fileId);
-  } else if (updatedLinks.length > 0) {
-    touchLinksUpdatedAt(fileId);
   }
 
   const refreshed = mapFileRow(getStoredFileById(fileId));
   res.json({
     ok: true,
     file: refreshed,
-    updatedLinks,
     warning: activeLinks.length > 0
       ? `На файл ссылаются ${activeLinks.length} активных ссылок — изменения применены`
       : null,
+  });
+}
+
+function handleAdminLinkCreate(req, res) {
+  const fileId = parseInt(req.params.id, 10);
+  if (!fileId) {
+    res.status(400).json({ error: 'Некорректный id файла' });
+    return;
+  }
+
+  const file = getStoredFileById(fileId);
+  if (!file) {
+    res.status(404).json({ error: 'Файл не найден' });
+    return;
+  }
+
+  const body = req.body || {};
+  let shortName = body.shortName?.trim();
+
+  if (shortName) {
+    const shortError = validateShortName(shortName);
+    if (shortError) {
+      res.status(400).json({ error: shortError });
+      return;
+    }
+    if (isShortNameTaken(shortName)) {
+      res.status(409).json({ error: `Ссылка «${shortName}» уже занята` });
+      return;
+    }
+  } else {
+    shortName = findAvailableRandomShortName();
+    if (!shortName) {
+      res.status(503).json({ error: 'Не удалось сгенерировать имя ссылки' });
+      return;
+    }
+  }
+
+  createLink({
+    shortName,
+    storedFileId: fileId,
+    linkMaxDownloads: null,
+    linkExpiresAt: null,
+    downloadPasswordHash: null,
+    allowedEmails: '[]',
+    allowedDomains: '[]',
+    ownerUserId: null,
+  });
+
+  touchLinksUpdatedAt(fileId);
+  const refreshed = mapFileRow(getStoredFileById(fileId));
+  res.json({
+    ok: true,
+    file: refreshed,
+    shortName,
+    shareUrl: `${config.baseUrl}/${encodeURIComponent(shortName)}`,
+  });
+}
+
+function handleAdminLinkUpdate(req, res) {
+  const linkId = parseInt(req.params.id, 10);
+  if (!linkId) {
+    res.status(400).json({ error: 'Некорректный id ссылки' });
+    return;
+  }
+
+  const link = getLinkById(linkId);
+  if (!link) {
+    res.status(404).json({ error: 'Ссылка не найдена' });
+    return;
+  }
+
+  const body = req.body || {};
+  const shortError = validateShortName(body.shortName);
+  if (shortError) {
+    res.status(400).json({ error: shortError });
+    return;
+  }
+
+  const newShortName = body.shortName.trim();
+  if (newShortName !== link.short_name) {
+    if (isShortNameTaken(newShortName)) {
+      res.status(409).json({ error: `Ссылка «${newShortName}» уже занята` });
+      return;
+    }
+    updateLinkShortNameById(linkId, newShortName);
+    touchLinksUpdatedAt(link.stored_file_id);
+  }
+
+  const file = mapFileRow(getStoredFileById(link.stored_file_id));
+  const updatedLink = mapLinkRow(getLinkById(linkId));
+  res.json({ ok: true, file, link: updatedLink });
+}
+
+function handleAdminLinkDelete(req, res) {
+  const linkId = parseInt(req.params.id, 10);
+  if (!linkId) {
+    res.status(400).json({ error: 'Некорректный id ссылки' });
+    return;
+  }
+
+  const link = getLinkById(linkId);
+  if (!link) {
+    res.status(404).json({ error: 'Ссылка не найдена' });
+    return;
+  }
+
+  const mapped = mapLinkRow(link);
+  const fileId = link.stored_file_id;
+  deleteLinkById(linkId);
+  touchLinksUpdatedAt(fileId);
+
+  const file = getStoredFileById(fileId);
+  res.json({
+    ok: true,
+    deletedLink: mapped,
+    file: file ? mapFileRow(file) : null,
   });
 }
 
@@ -261,4 +355,7 @@ module.exports = {
   handleAdminFileRename,
   handleAdminFileDelete,
   handleAdminFileDownload,
+  handleAdminLinkCreate,
+  handleAdminLinkUpdate,
+  handleAdminLinkDelete,
 };
