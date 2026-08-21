@@ -896,6 +896,41 @@ button[type="submit"]:disabled {
   box-sizing: border-box;
 }
 
+.admin-link-stats {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.admin-link-access-cell {
+  min-width: 140px;
+}
+
+.admin-access-label {
+  display: block;
+  margin: 0 0 2px;
+  font-size: 0.7rem;
+}
+
+.admin-link-emails,
+.admin-link-domains {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 0;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+  min-height: 44px;
+  resize: vertical;
+}
+
+.admin-link-access-hint {
+  display: block;
+  font-size: 0.7rem;
+}
+
 .admin-file-meta {
   display: block;
   margin-top: 4px;

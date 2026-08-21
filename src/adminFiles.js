@@ -4,6 +4,13 @@ const config = require('./config');
 const { removeStorageFromDisk, storageExists, sendStoredFile } = require('./chunkStorage');
 const { isLinkAvailable, isStoredFileAvailable, parseRemainingDownloads, parseExpiresDateInput } = require('./limits');
 const {
+  parseAccessList,
+  parseAccessInput,
+  parseDomainInput,
+  validateAccessRestrictionsSmtp,
+} = require('./access');
+const { isEmailConfigured } = require('./email');
+const {
   bytesToMb,
   getAllStoredFilesAdmin,
   getLinksForStoredFile,
@@ -67,6 +74,8 @@ function mapLinkRow(link) {
     link_download_count: link.link_download_count,
     link_expires_at: link.link_expires_at,
   };
+  const allowedEmails = parseAccessList(link.allowed_emails);
+  const allowedDomains = parseAccessList(link.allowed_domains);
   const active = isLinkAvailable(row);
   return {
     id: link.id,
@@ -74,9 +83,14 @@ function mapLinkRow(link) {
     downloadCount: link.link_download_count,
     maxDownloads: link.link_max_downloads,
     expiresAt: link.link_expires_at,
+    allowedEmails,
+    allowedDomains,
+    hasDownloadPassword: Boolean(link.download_password_hash),
+    requiresAccess: allowedEmails.length > 0 || allowedDomains.length > 0,
+    createdAt: link.created_at,
+    updatedAt: link.updated_at,
     active,
     shareUrl: `${config.baseUrl}/${encodeURIComponent(link.short_name)}`,
-    updatedAt: link.updated_at,
   };
 }
 
@@ -269,10 +283,22 @@ function handleAdminLinkUpdate(req, res) {
     return;
   }
 
+  const access = {
+    emails: parseAccessInput(body.allowedEmails || ''),
+    domains: parseDomainInput(body.allowedDomains || ''),
+  };
+  const smtpError = validateAccessRestrictionsSmtp(access, isEmailConfigured());
+  if (smtpError) {
+    res.status(503).json({ error: smtpError });
+    return;
+  }
+
   updateLinkById(linkId, {
     shortName: newShortName,
     linkMaxDownloads: remainingParsed.value,
     linkExpiresAt: expiresParsed.value,
+    allowedEmails: JSON.stringify(access.emails),
+    allowedDomains: JSON.stringify(access.domains),
   });
   touchLinksUpdatedAt(link.stored_file_id);
 
