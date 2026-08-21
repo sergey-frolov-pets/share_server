@@ -13,15 +13,17 @@
       <p id="file-description" class="file-description hidden"></p>
       <p id="file-meta" class="hint"></p>
 
+      <div id="download-status" class="download-status hidden" aria-live="polite"></div>
+
       <div id="user-bar" class="user-bar hidden">
         <span id="user-email"></span>
         <button type="button" id="user-logout" class="link-btn">Выйти</button>
       </div>
 
-      <form id="download-form" class="share-form hidden">
+      <form id="download-form" class="share-form hidden" novalidate>
         <label id="email-field" class="hidden">
           Email
-          <input type="email" id="access-email" autocomplete="email">
+          <input type="email" id="access-email" autocomplete="email" inputmode="email">
         </label>
 
         <label id="user-password-field" class="hidden">
@@ -38,9 +40,7 @@
           <input type="password" id="download-password" autocomplete="off">
         </label>
 
-        <button type="submit" id="download-btn">Скачать</button>
-        <p id="download-error" class="error hidden"></p>
-        <p id="download-info" class="hint hidden"></p>
+        <button type="button" id="download-btn" class="primary-btn">Скачать</button>
         <p id="registration-resend-wrap" class="hidden">
           <button type="button" id="resend-registration-btn" class="link-btn">Отправить ссылку на регистрацию повторно</button>
         </p>
