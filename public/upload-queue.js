@@ -140,6 +140,23 @@
       return this.getNextWaitingForFile();
     }
 
+    clearStaleUploader(itemId) {
+      if (!this.uploaders.has(itemId)) return true;
+
+      const item = this.getItem(itemId);
+      const uploader = this.uploaders.get(itemId);
+      const isActive = item?.status === S.UPLOADING
+        && uploader
+        && !uploader.paused
+        && !uploader.waitingForResume
+        && !uploader.cancelled;
+
+      if (isActive) return false;
+
+      this.uploaders.delete(itemId);
+      return true;
+    }
+
     formatItemStatus(item) {
       if (item.status === S.UPLOADING) {
         const pct = item.progress ? `${item.progress}%` : '0%';
@@ -352,12 +369,16 @@
     }
 
     findMatchForFile(file) {
-      return this.items.find((item) => (
-        sameFileIdentity(file, item)
-        && !TERMINAL_STATUSES.includes(item.status)
-        && item.status !== S.UPLOADING
-        && !this.uploaders.has(item.id)
-      )) || null;
+      return this.items.find((item) => {
+        if (!sameFileIdentity(file, item)) return false;
+        if (TERMINAL_STATUSES.includes(item.status)) return false;
+        if (item.status === S.UPLOADING) return false;
+        if (this.uploaders.has(item.id)) {
+          this.clearStaleUploader(item.id);
+          if (this.uploaders.has(item.id)) return false;
+        }
+        return true;
+      }) || null;
     }
 
     async submitFile(file) {
@@ -394,6 +415,8 @@
 
     async attachAndUpload(item, file) {
       if (!item || !file) return { ok: false, reason: 'invalid' };
+
+      this.clearStaleUploader(item.id);
       if (this.uploaders.has(item.id)) {
         return { ok: false, reason: 'already_uploading' };
       }
@@ -430,7 +453,10 @@
       let pendingPermission = 0;
 
       for (const item of targets) {
-        if (item.file || this.uploaders.has(item.id)) continue;
+        if (this.uploaders.has(item.id)) {
+          this.clearStaleUploader(item.id);
+        }
+        if (item.status === S.UPLOADING || this.uploaders.has(item.id)) continue;
         const hasStored = await store.hasStoredSession(item.sessionId);
         if (!hasStored) continue;
 
@@ -472,7 +498,10 @@
     }
 
     async startUpload(item) {
-      if (!item?.file || this.uploaders.has(item.id) || item.status === S.UPLOADING) return;
+      if (!item?.file || item.status === S.UPLOADING) return;
+
+      this.clearStaleUploader(item.id);
+      if (this.uploaders.has(item.id)) return;
 
       if (this.countByStatus(S.UPLOADING) >= this.maxConcurrent) {
         item.status = S.PENDING;

@@ -6,9 +6,13 @@
     return parts[parts.length - 1] || normalized;
   }
 
+  function normalizeName(name) {
+    return basename(name).normalize('NFC');
+  }
+
   function sameFileIdentity(file, item) {
     if (!file || !item) return false;
-    return basename(file.name) === basename(item.name)
+    return normalizeName(file.name) === normalizeName(item.name)
       && Number(file.size) === Number(item.size);
   }
 
