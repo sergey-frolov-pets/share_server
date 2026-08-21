@@ -8,9 +8,17 @@ const {
   setGlobalMaxStorageBytes,
 } = require('./db');
 const { daysToDatetime } = require('./limits');
+const { getUploadDiskSpace } = require('./diskSpace');
 
 function handleAdminStats(req, res) {
-  res.json(getAdminStats());
+  const stats = getAdminStats();
+  const disk = getUploadDiskSpace();
+  if (disk) {
+    stats.diskTotalMb = bytesToMb(disk.totalBytes);
+    stats.diskAvailableMb = bytesToMb(disk.availableBytes);
+    stats.diskFreeMb = bytesToMb(disk.freeBytes);
+  }
+  res.json(stats);
 }
 
 function mapUserRow(row) {
