@@ -258,6 +258,14 @@ button[type="submit"]:disabled {
   margin: 8px 0 0;
 }
 
+#registration-resend-wrap {
+  margin-top: 8px;
+}
+
+#registration-hint {
+  margin: 4px 0 0;
+}
+
 .user-bar {
   display: flex;
   justify-content: space-between;

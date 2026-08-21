@@ -111,22 +111,53 @@ async function resolveAccessEmail(req, body) {
   return { email: bodyEmail, fromSession: false };
 }
 
+function assertDownloadLinkAvailable(row, res) {
+  if (!row) {
+    res.status(404).json({ error: 'Файл не найден' });
+    return false;
+  }
+  if (!isStoredFileAvailable(row) || !storageExists(row)) {
+    res.status(404).json({ error: 'Файл удалён с сервера' });
+    return false;
+  }
+  if (!isLinkAvailable(row)) {
+    res.status(403).json({ error: 'Ссылка недоступна (лимит или срок истёк)' });
+    return false;
+  }
+  return true;
+}
+
+async function sendRegistrationInviteForDownload(res, email, shortName) {
+  const inviteResult = await sendRegistrationInvite(email, shortName);
+  if (!inviteResult.delivered) {
+    if (inviteResult.reason === 'smtp_not_configured') {
+      res.status(503).json({
+        error: 'Отправка email на сервере не настроена. Обратитесь к администратору сайта.',
+        emailNotConfigured: true,
+        canResendRegistration: true,
+      });
+      return;
+    }
+    res.status(500).json({
+      error: 'Не удалось отправить письмо для регистрации. Попробуйте позже.',
+      emailSendFailed: true,
+      canResendRegistration: true,
+    });
+    return;
+  }
+  res.json({
+    ok: true,
+    registrationSent: true,
+    message: 'На email отправлена ссылка для регистрации. После регистрации скачайте файл снова.',
+    canResendRegistration: true,
+  });
+}
+
 async function handleAuthorizeDownload(req, res) {
   const shortName = req.params.name;
   const row = getLinkWithFile(shortName);
 
-  if (!row) {
-    res.status(404).json({ error: 'Файл не найден' });
-    return;
-  }
-
-  if (!isStoredFileAvailable(row) || !storageExists(row)) {
-    res.status(404).json({ error: 'Файл удалён с сервера' });
-    return;
-  }
-
-  if (!isLinkAvailable(row)) {
-    res.status(403).json({ error: 'Ссылка недоступна (лимит или срок истёк)' });
+  if (!assertDownloadLinkAvailable(row, res)) {
     return;
   }
 
@@ -169,26 +200,7 @@ async function handleAuthorizeDownload(req, res) {
 
         req.session.userId = registeredUser.id;
       } else {
-        const inviteResult = await sendRegistrationInvite(access.email, shortName);
-        if (!inviteResult.delivered) {
-          if (inviteResult.reason === 'smtp_not_configured') {
-            res.status(503).json({
-              error: 'Отправка email на сервере не настроена. Обратитесь к администратору сайта.',
-              emailNotConfigured: true,
-            });
-            return;
-          }
-          res.status(500).json({
-            error: 'Не удалось отправить письмо для регистрации. Попробуйте позже.',
-            emailSendFailed: true,
-          });
-          return;
-        }
-        res.json({
-          ok: false,
-          registrationSent: true,
-          message: 'На email отправлена ссылка для регистрации. После регистрации скачайте файл снова.',
-        });
+        await sendRegistrationInviteForDownload(res, access.email, shortName);
         return;
       }
     } else if (!isEmailAllowedForFile(access.email, row)) {
@@ -199,6 +211,47 @@ async function handleAuthorizeDownload(req, res) {
 
   grantDownload(req, shortName);
   res.json({ ok: true, authorized: true });
+}
+
+async function handleResendRegistration(req, res) {
+  const shortName = req.params.name;
+  const row = getLinkWithFile(shortName);
+
+  if (!assertDownloadLinkAvailable(row, res)) {
+    return;
+  }
+
+  if (!fileHasAccessRestrictions(row)) {
+    res.status(400).json({ error: 'Для этой ссылки не требуется регистрация по email' });
+    return;
+  }
+
+  if (getSessionUserEmail(req)) {
+    res.status(400).json({ error: 'Вы уже вошли в аккаунт — нажмите «Скачать»' });
+    return;
+  }
+
+  const emailError = validateEmailFormat(req.body?.email);
+  if (emailError) {
+    res.status(400).json({ error: emailError });
+    return;
+  }
+
+  const email = normalizeEmail(req.body.email);
+  if (!isEmailAllowedForFile(email, row)) {
+    res.status(403).json({ error: 'Этот email не имеет доступа к файлу' });
+    return;
+  }
+
+  if (isUserRegistered(email)) {
+    res.status(400).json({
+      error: 'Этот email уже зарегистрирован. Введите пароль и нажмите «Скачать».',
+      needsLogin: true,
+    });
+    return;
+  }
+
+  await sendRegistrationInviteForDownload(res, email, shortName);
 }
 
 function handleDownloadFile(req, res) {
@@ -244,6 +297,7 @@ module.exports = {
   buildFileInfo,
   handleFileInfo,
   handleAuthorizeDownload,
+  handleResendRegistration,
   handleDownloadFile,
   shouldServeDownloadPage,
   isDownloadAllowed,

@@ -13,17 +13,21 @@ const userLogoutBtn = document.getElementById('user-logout');
 const downloadForm = document.getElementById('download-form');
 const emailField = document.getElementById('email-field');
 const userPasswordField = document.getElementById('user-password-field');
+const registrationHint = document.getElementById('registration-hint');
 const downloadPasswordField = document.getElementById('download-password-field');
 const accessEmailInput = document.getElementById('access-email');
 const userPasswordInput = document.getElementById('user-password');
 const downloadPasswordInput = document.getElementById('download-password');
 const downloadError = document.getElementById('download-error');
 const downloadInfo = document.getElementById('download-info');
+const registrationResendWrap = document.getElementById('registration-resend-wrap');
+const resendRegistrationBtn = document.getElementById('resend-registration-btn');
 const openDownload = document.getElementById('open-download');
 const directDownloadBtn = document.getElementById('direct-download-btn');
 
 let fileInfo = null;
 let currentUser = null;
+let resendInProgress = false;
 
 function show(el) {
   el.classList.remove('hidden');
@@ -42,6 +46,18 @@ function setMessage(el, message, isError) {
     el.textContent = '';
     hide(el);
   }
+}
+
+function showRegistrationResendOption() {
+  if (!fileInfo?.requiresAccess || currentUser) {
+    return;
+  }
+  show(registrationResendWrap);
+}
+
+function showRegistrationPending(message) {
+  setMessage(downloadInfo, message, false);
+  showRegistrationResendOption();
 }
 
 async function api(path, options = {}) {
@@ -64,6 +80,54 @@ async function api(path, options = {}) {
 
 function triggerFileDownload() {
   window.location.href = `/api/download/${encodeURIComponent(shortName)}/file`;
+}
+
+function validateAccessEmailInput() {
+  const email = accessEmailInput.value.trim();
+  if (!email) {
+    setMessage(downloadError, 'Укажите email', true);
+    accessEmailInput.focus();
+    return null;
+  }
+  return email;
+}
+
+async function resendRegistrationInvite() {
+  if (resendInProgress) return;
+
+  const email = validateAccessEmailInput();
+  if (!email) return;
+
+  resendInProgress = true;
+  resendRegistrationBtn.disabled = true;
+  setMessage(downloadError, null);
+
+  try {
+    const result = await api(`/api/download/${encodeURIComponent(shortName)}/resend-registration`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+    showRegistrationPending(
+      result.message || 'Ссылка для регистрации отправлена на email. После регистрации скачайте файл снова.'
+    );
+  } catch (err) {
+    if (err.payload?.needsLogin) {
+      setMessage(
+        downloadError,
+        `${err.message} Если вы ещё не регистрировали аккаунт, очистите поле пароля.`,
+        true
+      );
+      show(userPasswordField);
+    } else {
+      setMessage(downloadError, err.message, true);
+    }
+    if (err.payload?.canResendRegistration) {
+      showRegistrationResendOption();
+    }
+  } finally {
+    resendInProgress = false;
+    resendRegistrationBtn.disabled = false;
+  }
 }
 
 async function loadUser() {
@@ -102,18 +166,23 @@ function renderForm() {
 
   show(downloadForm);
   hide(openDownload);
+  hide(registrationResendWrap);
 
   if (fileInfo.requiresAccess) {
     if (currentUser) {
       hide(emailField);
       hide(userPasswordField);
+      hide(registrationHint);
     } else {
       show(emailField);
       show(userPasswordField);
+      show(registrationHint);
+      showRegistrationResendOption();
     }
   } else {
     hide(emailField);
     hide(userPasswordField);
+    hide(registrationHint);
   }
 
   if (fileInfo.requiresDownloadPassword) {
@@ -147,13 +216,18 @@ downloadForm.addEventListener('submit', async (e) => {
   setMessage(downloadError, null);
   setMessage(downloadInfo, null);
 
+  if (fileInfo.requiresAccess && !currentUser) {
+    const email = validateAccessEmailInput();
+    if (!email) return;
+  }
+
   try {
     const body = {};
     if (fileInfo.requiresDownloadPassword) {
       body.downloadPassword = downloadPasswordInput.value;
     }
     if (fileInfo.requiresAccess) {
-      body.email = accessEmailInput.value;
+      body.email = accessEmailInput.value.trim();
       body.password = userPasswordInput.value;
     }
 
@@ -163,17 +237,26 @@ downloadForm.addEventListener('submit', async (e) => {
     });
 
     if (result.registrationSent) {
-      setMessage(downloadInfo, result.message, false);
+      showRegistrationPending(
+        result.message || 'На email отправлена ссылка для регистрации. После регистрации скачайте файл снова.'
+      );
       return;
     }
 
     triggerFileDownload();
   } catch (err) {
     if (err.payload?.needsLogin) {
-      setMessage(downloadError, err.message, true);
+      setMessage(
+        downloadError,
+        `${err.message} Если вы ещё не регистрировали аккаунт, очистите поле пароля и нажмите «Скачать» снова.`,
+        true
+      );
       show(userPasswordField);
     } else {
       setMessage(downloadError, err.message, true);
+    }
+    if (err.payload?.canResendRegistration) {
+      showRegistrationResendOption();
     }
   }
 });
@@ -182,11 +265,16 @@ directDownloadBtn.addEventListener('click', () => {
   triggerFileDownload();
 });
 
+resendRegistrationBtn.addEventListener('click', () => {
+  resendRegistrationInvite();
+});
+
 userLogoutBtn.addEventListener('click', async () => {
   await api('/api/user/logout', { method: 'POST' });
   await loadUser();
   accessEmailInput.value = '';
   userPasswordInput.value = '';
+  renderForm();
 });
 
 init();

@@ -61,6 +61,7 @@ const {
 const {
   handleFileInfo,
   handleAuthorizeDownload,
+  handleResendRegistration,
   handleDownloadFile,
   shouldServeDownloadPage,
   isDownloadAllowed,
@@ -327,6 +328,7 @@ app.post('/api/user/share', requireUserAuth, (req, res) => {
 
 app.get('/api/file/:name', handleFileInfo);
 app.post('/api/download/:name/authorize', handleAuthorizeDownload);
+app.post('/api/download/:name/resend-registration', handleResendRegistration);
 app.get('/api/download/:name/file', handleDownloadFile);
 
 app.get('/:shortName', (req, res, next) => {
