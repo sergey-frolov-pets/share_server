@@ -169,7 +169,21 @@ async function handleAuthorizeDownload(req, res) {
 
         req.session.userId = registeredUser.id;
       } else {
-        await sendRegistrationInvite(access.email, shortName);
+        const inviteResult = await sendRegistrationInvite(access.email, shortName);
+        if (!inviteResult.delivered) {
+          if (inviteResult.reason === 'smtp_not_configured') {
+            res.status(503).json({
+              error: 'Отправка email на сервере не настроена. Обратитесь к администратору сайта.',
+              emailNotConfigured: true,
+            });
+            return;
+          }
+          res.status(500).json({
+            error: 'Не удалось отправить письмо для регистрации. Попробуйте позже.',
+            emailSendFailed: true,
+          });
+          return;
+        }
         res.json({
           ok: false,
           registrationSent: true,

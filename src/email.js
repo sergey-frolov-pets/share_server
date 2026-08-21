@@ -4,7 +4,7 @@ const config = require('./config');
 let transporter = null;
 
 function isEmailConfigured() {
-  return Boolean(config.smtpHost);
+  return Boolean(config.smtpHost && String(config.smtpHost).trim());
 }
 
 function getTransporter() {
@@ -14,10 +14,9 @@ function getTransporter() {
       host: config.smtpHost,
       port: config.smtpPort,
       secure: config.smtpSecure,
-      auth: {
-        user: config.smtpUser,
-        pass: config.smtpPass,
-      },
+      auth: config.smtpUser
+        ? { user: config.smtpUser, pass: config.smtpPass }
+        : undefined,
     });
   }
   return transporter;
@@ -34,14 +33,33 @@ async function sendEmail({ to, subject, text, html }) {
 
   const transport = getTransporter();
   if (!transport) {
+    console.warn('[email] SMTP не настроен — письмо не отправлено');
     console.log('[email:dev] To:', to);
     console.log('[email:dev] Subject:', subject);
     console.log('[email:dev] Body:', text);
-    return { dev: true };
+    return {
+      delivered: false,
+      mode: 'console',
+      reason: 'smtp_not_configured',
+    };
   }
 
-  await transport.sendMail(mail);
-  return { sent: true };
+  try {
+    const info = await transport.sendMail(mail);
+    return {
+      delivered: true,
+      mode: 'smtp',
+      messageId: info.messageId,
+    };
+  } catch (error) {
+    console.error('[email] Ошибка отправки:', error.message);
+    return {
+      delivered: false,
+      mode: 'smtp',
+      reason: 'smtp_send_failed',
+      error: error.message,
+    };
+  }
 }
 
 module.exports = {

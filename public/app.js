@@ -14,6 +14,8 @@ const adminUsersBody = document.getElementById('admin-users-body');
 const adminError = document.getElementById('admin-error');
 const storageLimitForm = document.getElementById('storage-limit-form');
 const storageUsage = document.getElementById('storage-usage');
+const storageDiskHint = document.getElementById('storage-disk-hint');
+const smtpStatusHint = document.getElementById('smtp-status-hint');
 const globalMaxStorageMb = document.getElementById('global-max-storage-mb');
 const storageLimitSuccess = document.getElementById('storage-limit-success');
 const dropZone = document.getElementById('drop-zone');
@@ -418,6 +420,18 @@ async function loadAdminPanel() {
     storageUsage.textContent = stats.maxStorageMb
       ? `Использовано: ${stats.storageMb} МБ из ${stats.maxStorageMb} МБ (свободно ${stats.storageFreeMb} МБ)`
       : `Использовано: ${stats.storageMb} МБ (лимит не задан)`;
+    if (storageDiskHint) {
+      storageDiskHint.textContent = formatPhysicalDiskHint(stats);
+    }
+    if (smtpStatusHint) {
+      if (stats.smtpConfigured) {
+        smtpStatusHint.textContent = 'SMTP настроен — письма (регистрация, сброс пароля) отправляются.';
+        smtpStatusHint.className = 'hint';
+      } else {
+        smtpStatusHint.textContent = 'SMTP не настроен — письма не отправляются. Задайте SMTP_HOST, SMTP_USER, SMTP_PASS в .env на сервере.';
+        smtpStatusHint.className = 'error';
+      }
+    }
     globalMaxStorageMb.value = stats.maxStorageMb ?? '';
 
     adminStats.innerHTML = [
@@ -463,6 +477,13 @@ async function loadAdminPanel() {
   } catch (err) {
     setMessage(adminError, err.message, 'error');
   }
+}
+
+function formatPhysicalDiskHint(stats) {
+  if (stats.diskAvailableMb == null || stats.diskTotalMb == null) {
+    return 'Не удалось определить объём физического диска';
+  }
+  return `На физическом диске доступно ${stats.diskAvailableMb} МБ из ${stats.diskTotalMb} МБ`;
 }
 
 function escapeHtml(value) {

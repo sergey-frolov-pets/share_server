@@ -45,6 +45,7 @@ const {
 } = require('./share');
 const { assertUserCanUpload } = require('./uploadQuota');
 const { checkGlobalStorageQuota } = require('./db');
+const { isEmailConfigured } = require('./email');
 const {
   handleRegister,
   handleChangePassword,
@@ -364,4 +365,7 @@ startCleanupScheduler(config.cleanupIntervalMs);
 
 app.listen(config.port, () => {
   console.log(`Share server: ${config.baseUrl}`);
+  if (!isEmailConfigured()) {
+    console.warn('[email] SMTP не настроен (SMTP_HOST пуст) — письма не отправляются, только лог в консоль');
+  }
 });
