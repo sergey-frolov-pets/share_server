@@ -108,14 +108,16 @@
           <input type="password" id="download-password" autocomplete="new-password" placeholder="не задан">
         </label>
 
-        <label>
+        <label id="access-emails-label">
           Доступ: email
-          <textarea id="allowed-emails" rows="2" placeholder="user@example.com"></textarea>
+          <span id="access-emails-hint" class="hint hidden"></span>
+          <textarea id="allowed-emails" rows="2" placeholder="user@example.com" disabled></textarea>
         </label>
 
-        <label>
+        <label id="access-domains-label">
           Доступ: домены
-          <textarea id="allowed-domains" rows="2" placeholder="vk.ru"></textarea>
+          <span id="access-domains-hint" class="hint hidden"></span>
+          <textarea id="allowed-domains" rows="2" placeholder="vk.ru" disabled></textarea>
         </label>
       </details>
 
@@ -210,14 +212,16 @@
           <input type="password" id="update-download-password" autocomplete="new-password" placeholder="не менять">
         </label>
 
-        <label>
+        <label id="update-access-emails-label">
           Доступ: email
-          <textarea id="update-allowed-emails" rows="2"></textarea>
+          <span id="update-access-emails-hint" class="hint hidden"></span>
+          <textarea id="update-allowed-emails" rows="2" disabled></textarea>
         </label>
 
-        <label>
+        <label id="update-access-domains-label">
           Доступ: домены
-          <textarea id="update-allowed-domains" rows="2"></textarea>
+          <span id="update-access-domains-hint" class="hint hidden"></span>
+          <textarea id="update-allowed-domains" rows="2" disabled></textarea>
         </label>
 
         <label class="checkbox-label">

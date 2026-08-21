@@ -83,6 +83,21 @@ function isUserRegistered(email) {
   return Boolean(getUserByEmail(normalizeEmail(email)));
 }
 
+function accessRestrictionsRequireSmtp(access) {
+  if (!access) return false;
+  const emails = access.emails || [];
+  const domains = access.domains || [];
+  return emails.length > 0 || domains.length > 0;
+}
+
+function validateAccessRestrictionsSmtp(access, smtpConfigured) {
+  if (!accessRestrictionsRequireSmtp(access)) return null;
+  if (!smtpConfigured) {
+    return 'Доступ по email недоступен: на сервере не настроен SMTP. Настройте почту в .env или уберите ограничения.';
+  }
+  return null;
+}
+
 module.exports = {
   normalizeEmail,
   parseAccessList,
@@ -95,4 +110,6 @@ module.exports = {
   isEmailAllowedForFile,
   validateEmailFormat,
   isUserRegistered,
+  accessRestrictionsRequireSmtp,
+  validateAccessRestrictionsSmtp,
 };

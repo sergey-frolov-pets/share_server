@@ -17,9 +17,10 @@ const {
 } = require('./db');
 const { removeStorageFromDisk } = require('./chunkStorage');
 const { hashSecret } = require('./password');
-const { parseAccessInput, parseDomainInput } = require('./access');
+const { parseAccessInput, parseDomainInput, validateAccessRestrictionsSmtp } = require('./access');
 const { parseLimitFields } = require('./limits');
 const { assertUserCanUpload, assertTempOwnedByUser } = require('./uploadQuota');
+const { isEmailConfigured } = require('./email');
 
 function parseShareLimits(body) {
   const linkLimits = parseLimitFields(body, 'link');
@@ -184,6 +185,11 @@ function handleCreateShare(req, res, validateShortName) {
   }
 
   const access = parseAccessLists(body);
+  const accessError = validateAccessRestrictionsSmtp(access, isEmailConfigured());
+  if (accessError) {
+    res.status(503).json({ error: accessError, emailNotConfigured: true });
+    return;
+  }
   const descriptionParsed = parseDescription(body.description);
   if (descriptionParsed.error) {
     res.status(400).json({ error: descriptionParsed.error });
@@ -284,6 +290,20 @@ function handleUpdateShare(req, res, validateShortName) {
   }
 
   const access = parseAccessLists(body);
+  const existingEmails = JSON.parse(row.allowed_emails || '[]');
+  const existingDomains = JSON.parse(row.allowed_domains || '[]');
+  const accessChanged = (
+    JSON.stringify(access.emails) !== JSON.stringify(existingEmails)
+    || JSON.stringify(access.domains) !== JSON.stringify(existingDomains)
+  );
+
+  if (accessChanged) {
+    const accessError = validateAccessRestrictionsSmtp(access, isEmailConfigured());
+    if (accessError) {
+      res.status(503).json({ error: accessError, emailNotConfigured: true });
+      return;
+    }
+  }
   let description = row.description || null;
   if (body.description !== undefined) {
     const descriptionParsed = parseDescription(body.description);

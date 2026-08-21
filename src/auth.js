@@ -2,6 +2,7 @@ const config = require('./config');
 const { getUserById, getUserByEmail } = require('./db');
 const { verifySecret } = require('./password');
 const { formatUserUploadInfo } = require('./uploadQuota');
+const { isEmailConfigured } = require('./email');
 
 function requireAdminAuth(req, res, next) {
   if (req.session?.adminAuth) {
@@ -38,7 +39,10 @@ function handleAdminLogout(req, res) {
 }
 
 function handleAdminMe(req, res) {
-  res.json({ authenticated: Boolean(req.session?.adminAuth) });
+  res.json({
+    authenticated: Boolean(req.session?.adminAuth),
+    smtpConfigured: isEmailConfigured(),
+  });
 }
 
 function handleUserLogin(req, res) {
