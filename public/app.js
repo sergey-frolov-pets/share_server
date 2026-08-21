@@ -426,7 +426,11 @@ async function ingestFileForUpload(file, handle = null) {
     updateDropZoneHintForQueue();
   } else {
     const waiting = uploadQueue.getWaitingForFileItems?.() || [];
-    const matched = waiting.some((item) => item.name === file.name && item.size === file.size);
+    const matched = waiting.some((item) => {
+      const fileName = (file.name || '').split(/[/\\]/).pop().normalize('NFC');
+      const itemName = (item.name || '').split(/[/\\]/).pop().normalize('NFC');
+      return fileName === itemName && item.size === file.size;
+    });
     if (waiting.length && matched) {
       setMessage(shareError, 'Не удалось возобновить — попробуйте ещё раз', 'error');
     } else if (waiting.length) {

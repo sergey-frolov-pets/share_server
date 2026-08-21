@@ -63,10 +63,17 @@
     return 0;
   }
 
+  function basename(name) {
+    if (!name) return '';
+    const normalized = String(name).replace(/\\/g, '/');
+    const parts = normalized.split('/');
+    return parts[parts.length - 1] || normalized;
+  }
+
   function fileMatchesItem(file, item) {
     if (!file || !item) return false;
-    const fileName = file.name || '';
-    const itemName = item.name || '';
+    const fileName = basename(file.name).normalize('NFC');
+    const itemName = basename(item.name).normalize('NFC');
     return fileName === itemName && Number(item.size) === Number(file.size);
   }
 
@@ -140,6 +147,23 @@
 
     getRemoteWaitingItems() {
       return this.getWaitingForFileItems();
+    }
+
+    clearStaleUploader(itemId) {
+      if (!this.uploaders.has(itemId)) return true;
+
+      const item = this.getItem(itemId);
+      const uploader = this.uploaders.get(itemId);
+      const isActive = item?.status === 'uploading'
+        && uploader
+        && !uploader.paused
+        && !uploader.waitingForResume
+        && !uploader.cancelled;
+
+      if (isActive) return false;
+
+      this.uploaders.delete(itemId);
+      return true;
     }
 
     formatItemStatus(item) {
@@ -403,13 +427,16 @@
     }
 
     findRemoteMatchForFile(file) {
-      return this.items.find((item) => (
-        item.sessionId
-        && fileMatchesItem(file, item)
-        && !['ready', 'shared', 'cancelled', 'uploading'].includes(item.status)
-        && !this.uploaders.has(item.id)
-        && (!item.file || item.status === 'paused' || item.status === 'error')
-      )) || null;
+      return this.items.find((item) => {
+        if (!item.sessionId || !fileMatchesItem(file, item)) return false;
+        if (['ready', 'shared', 'cancelled', 'uploading'].includes(item.status)) return false;
+        if (!item.file && item.status !== 'paused' && item.status !== 'error') return false;
+        if (this.uploaders.has(item.id)) {
+          this.clearStaleUploader(item.id);
+          if (this.uploaders.has(item.id)) return false;
+        }
+        return true;
+      }) || null;
     }
 
     isSessionAlreadyUploading(sessionId, exceptItemId = null) {
@@ -426,8 +453,9 @@
 
       if (item.status === 'ready') return true;
 
+      this.clearStaleUploader(item.id);
       if (this.uploaders.has(item.id) && item.file) {
-        return true;
+        return false;
       }
 
       item.file = file;
@@ -468,7 +496,10 @@
       let pendingPermission = 0;
 
       for (const item of targets) {
-        if (item.file || this.uploaders.has(item.id)) continue;
+        if (this.uploaders.has(item.id)) {
+          this.clearStaleUploader(item.id);
+        }
+        if (item.status === 'uploading' || this.uploaders.has(item.id)) continue;
         if (this.isSessionAlreadyUploading(item.sessionId, item.id)) continue;
 
         const hasStored = await store.hasStoredSession(item.sessionId);
@@ -760,13 +791,18 @@
     }
 
     async startItemUpload(item) {
-      if (!item?.file || this.uploaders.has(item.id)) return;
-      if (item.status === 'uploading') return;
+      if (!item?.file || item.status === 'uploading') return;
+
+      this.clearStaleUploader(item.id);
+      if (this.uploaders.has(item.id)) return;
 
       if (item.sessionId && this.isSessionAlreadyUploading(item.sessionId, item.id)) {
-        item.status = 'pending';
-        this.notify();
-        return;
+        this.clearStaleUploader(item.id);
+        if (this.isSessionAlreadyUploading(item.sessionId, item.id)) {
+          item.status = 'pending';
+          this.notify();
+          return;
+        }
       }
 
       if (this.getActiveUploadCount() >= this.maxConcurrent) {
