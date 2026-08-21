@@ -100,6 +100,10 @@ let editingShortName = null;
 let smtpConfigured = false;
 let adminAssetsCache = [];
 
+function adminT(key, vars) {
+  return window.UiSettings?.t(key, vars) ?? key;
+}
+
 const SMTP_ACCESS_UNAVAILABLE_HINT = 'Недоступно без настроенного SMTP на сервере';
 
 function updateAccessRestrictionFields() {
@@ -458,17 +462,21 @@ async function loadAdminPanel() {
   try {
     const stats = await api('/api/admin/stats');
     storageUsage.textContent = stats.maxStorageMb
-      ? `Использовано: ${stats.storageMb} МБ из ${stats.maxStorageMb} МБ (свободно ${stats.storageFreeMb} МБ)`
-      : `Использовано: ${stats.storageMb} МБ (лимит не задан)`;
+      ? adminT('admin.storage.usedWithLimit', {
+        used: stats.storageMb,
+        max: stats.maxStorageMb,
+        free: stats.storageFreeMb,
+      })
+      : adminT('admin.storage.usedNoLimit', { used: stats.storageMb });
     if (storageDiskHint) {
       storageDiskHint.textContent = formatPhysicalDiskHint(stats);
     }
     if (smtpStatusHint) {
       if (stats.smtpConfigured) {
-        smtpStatusHint.textContent = 'SMTP настроен — письма (регистрация, сброс пароля) отправляются.';
+        smtpStatusHint.textContent = adminT('admin.smtp.ok');
         smtpStatusHint.className = 'hint';
       } else {
-        smtpStatusHint.textContent = 'SMTP не настроен — письма не отправляются. Задайте SMTP_HOST, SMTP_USER, SMTP_PASS в .env на сервере.';
+        smtpStatusHint.textContent = adminT('admin.smtp.missing');
         smtpStatusHint.className = 'error';
       }
     }
@@ -477,12 +485,12 @@ async function loadAdminPanel() {
     globalMaxStorageMb.value = stats.maxStorageMb ?? '';
 
     adminStats.innerHTML = [
-      { label: 'Пользователи', value: stats.users },
-      { label: 'С загрузкой', value: stats.uploaders },
-      { label: 'Ссылки', value: stats.links },
-      { label: 'Файлы', value: stats.files },
-      { label: 'Диск, МБ', value: stats.maxStorageMb ? `${stats.storageMb}/${stats.maxStorageMb}` : stats.storageMb },
-      { label: 'Скачивания (ссылки)', value: stats.linkDownloads },
+      { label: adminT('admin.stat.users'), value: stats.users },
+      { label: adminT('admin.stat.uploaders'), value: stats.uploaders },
+      { label: adminT('admin.stat.links'), value: stats.links },
+      { label: adminT('admin.stat.files'), value: stats.files },
+      { label: adminT('admin.stat.disk'), value: stats.maxStorageMb ? `${stats.storageMb}/${stats.maxStorageMb}` : stats.storageMb },
+      { label: adminT('admin.stat.linkDownloads'), value: stats.linkDownloads },
     ].map((s) => `<div class="stat-card"><strong>${s.value}</strong><span>${s.label}</span></div>`).join('');
 
     const { users } = await api('/api/admin/users');
@@ -495,18 +503,18 @@ async function loadAdminPanel() {
         <td>
           <label class="checkbox-label">
             <input type="checkbox" class="user-can-upload" ${u.canUpload ? 'checked' : ''}>
-            Разрешить
+            ${adminT('admin.user.allow')}
           </label>
         </td>
         <td>
           <div class="user-limits">
-            <input type="number" class="user-max-file" min="1" placeholder="МБ файл" value="${u.maxFileSizeMb ?? ''}">
-            <input type="number" class="user-max-total" min="1" placeholder="МБ всего" value="${u.maxTotalSizeMb ?? ''}">
-            <input type="number" class="user-max-files" min="1" placeholder="файлов" value="${u.maxFiles ?? ''}">
-            <input type="number" class="user-valid-days" min="1" placeholder="дней" value="">
+            <input type="number" class="user-max-file" min="1" placeholder="${adminT('admin.user.placeholder.fileMb')}" value="${u.maxFileSizeMb ?? ''}">
+            <input type="number" class="user-max-total" min="1" placeholder="${adminT('admin.user.placeholder.totalMb')}" value="${u.maxTotalSizeMb ?? ''}">
+            <input type="number" class="user-max-files" min="1" placeholder="${adminT('admin.user.placeholder.files')}" value="${u.maxFiles ?? ''}">
+            <input type="number" class="user-valid-days" min="1" placeholder="${adminT('admin.user.placeholder.days')}" value="">
           </div>
         </td>
-        <td><button type="button" class="btn-icon user-save" data-icon="save" title="Сохранить" aria-label="Сохранить"></button></td>
+        <td><button type="button" class="btn-icon user-save" data-icon="save" title="${adminT('admin.btn.save')}" aria-label="${adminT('admin.btn.save')}"></button></td>
       </tr>
     `).join('');
 
@@ -523,9 +531,12 @@ async function loadAdminPanel() {
 
 function formatPhysicalDiskHint(stats) {
   if (stats.diskAvailableMb == null || stats.diskTotalMb == null) {
-    return 'Не удалось определить объём физического диска';
+    return adminT('admin.disk.physicalUnknown');
   }
-  return `На физическом диске доступно ${stats.diskAvailableMb} МБ из ${stats.diskTotalMb} МБ`;
+  return adminT('admin.disk.physical', {
+    free: stats.diskAvailableMb,
+    total: stats.diskTotalMb,
+  });
 }
 
 function escapeHtml(value) {
@@ -642,48 +653,49 @@ function renderAdminAssetsStats() {
   const totalSizeMb = files.reduce((sum, file) => sum + (file.sizeMb || 0), 0);
 
   if (adminFilesStats) {
-    adminFilesStats.textContent = [
-      `Файлов: ${files.length}`,
-      `Объём: ${totalSizeMb.toFixed(1)} МБ`,
-      `Скачиваний файлов: ${totalDownloads}`,
-      `Ссылок: ${allLinks.length} (активных ${activeLinks.length})`,
-    ].join(' · ');
+    adminFilesStats.textContent = adminT('admin.filesStats', {
+      files: files.length,
+      size: totalSizeMb.toFixed(1),
+      downloads: totalDownloads,
+      links: allLinks.length,
+      active: activeLinks.length,
+    });
   }
 
   if (adminLinksStats) {
-    adminLinksStats.textContent = [
-      `Ссылок: ${allLinks.length}`,
-      `Активных: ${activeLinks.length}`,
-      `Скачиваний по ссылкам: ${linkDownloads}`,
-    ].join(' · ');
+    adminLinksStats.textContent = adminT('admin.linksStats', {
+      links: allLinks.length,
+      active: activeLinks.length,
+      downloads: linkDownloads,
+    });
   }
 }
 
 function renderAdminFilesTable() {
   adminFilesBody.innerHTML = adminAssetsCache.map((file) => {
-    const linksStat = `${file.linkCount} (активн. ${file.activeLinkCount})`;
+    const linksStat = `${file.linkCount} (${adminT('admin.file.linksActive')} ${file.activeLinkCount})`;
     const downloadsStat = formatDownloadLimit(file.fileDownloadCount || 0, file.fileMaxDownloads);
     const metaParts = [formatCompactDateTime(file.createdAt)];
     if (file.fileDeleteAt) {
-      metaParts.push(`до ${formatCompactDate(file.fileDeleteAt)}`);
+      metaParts.push(`${adminT('admin.file.until')} ${formatCompactDate(file.fileDeleteAt)}`);
     }
     const meta = metaParts.join(' · ');
 
     return `
       <tr data-file-id="${file.id}">
-        <td data-label="Файл">
+        <td data-label="${adminT('admin.col.file')}">
           <input type="text" class="admin-file-name" value="${escapeHtml(file.originalName)}">
           <span class="hint admin-file-meta">${escapeHtml(meta)}</span>
         </td>
-        <td data-label="Размер" class="admin-cell-num">${file.sizeMb ?? 0} МБ</td>
-        <td data-label="Скачиваний" class="admin-cell-num">${downloadsStat}</td>
-        <td data-label="Ссылки" class="admin-cell-num">${linksStat}</td>
-        <td data-label="Действия">
+        <td data-label="${adminT('admin.col.size')}" class="admin-cell-num">${file.sizeMb ?? 0} МБ</td>
+        <td data-label="${adminT('admin.col.downloads')}" class="admin-cell-num">${downloadsStat}</td>
+        <td data-label="${adminT('admin.col.links')}" class="admin-cell-num">${linksStat}</td>
+        <td data-label="${adminT('admin.col.actions')}">
           <div class="admin-row-actions icon-actions">
-            ${AppIcons.iconButton('link', { className: 'admin-file-add-link', title: 'Добавить ссылку' })}
-            ${AppIcons.iconButton('download', { className: 'admin-file-download', title: 'Скачать' })}
-            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: 'Сохранить файл' })}
-            ${AppIcons.iconButton('delete', { className: 'btn-danger admin-file-delete', title: 'Удалить файл' })}
+            ${AppIcons.iconButton('link', { className: 'admin-file-add-link', title: adminT('admin.btn.addLink') })}
+            ${AppIcons.iconButton('download', { className: 'admin-file-download', title: adminT('admin.btn.download') })}
+            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: adminT('admin.btn.saveFile') })}
+            ${AppIcons.iconButton('delete', { className: 'btn-danger admin-file-delete', title: adminT('admin.btn.deleteFile') })}
           </div>
         </td>
       </tr>
@@ -716,33 +728,33 @@ function renderAdminLinksTable() {
       const expiresValue = toDateInputValue(link.expiresAt);
       return `
         <tr data-link-id="${link.id}" data-file-id="${file.id}">
-          <td data-label="Ссылка">
+          <td data-label="${adminT('admin.col.link')}">
             <input type="text" class="admin-link-short-name" value="${escapeHtml(link.shortName)}">
             <a class="hint admin-link-url" href="${escapeHtml(link.shareUrl)}" target="_blank" rel="noopener">${escapeHtml(link.shareUrl)}</a>
           </td>
-          <td data-label="Файл">
+          <td data-label="${adminT('admin.col.file')}">
             <span class="admin-link-file-name">${escapeHtml(file.originalName)}</span>
           </td>
-          <td data-label="Скачано" class="admin-cell-num">${link.downloadCount}</td>
-          <td data-label="Осталось">
+          <td data-label="${adminT('admin.col.downloaded')}" class="admin-cell-num">${link.downloadCount}</td>
+          <td data-label="${adminT('admin.col.remaining')}">
             <input type="number" class="admin-link-remaining" min="0" step="1" placeholder="∞" value="${escapeHtml(remainingValue)}">
           </td>
-          <td data-label="До">
+          <td data-label="${adminT('admin.col.until')}">
             <input type="date" class="admin-link-expires" value="${escapeHtml(expiresValue)}">
           </td>
-          <td data-label="Статус">
-            <span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? 'активна' : 'неактивна'}</span>
+          <td data-label="${adminT('admin.col.status')}">
+            <span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? adminT('admin.link.active') : adminT('admin.link.inactive')}</span>
           </td>
-          <td data-label="Действия">
+          <td data-label="${adminT('admin.col.actions')}">
             <div class="admin-row-actions icon-actions">
-              ${AppIcons.iconButton('save', { className: 'admin-link-save', title: 'Обновить ссылку', attrs: 'disabled' })}
-              ${AppIcons.iconButton('delete', { className: 'btn-danger admin-link-delete', title: 'Удалить ссылку' })}
+              ${AppIcons.iconButton('save', { className: 'admin-link-save', title: adminT('admin.btn.updateLink'), attrs: 'disabled' })}
+              ${AppIcons.iconButton('delete', { className: 'btn-danger admin-link-delete', title: adminT('admin.btn.deleteLink') })}
             </div>
           </td>
         </tr>
       `;
     }).join('')
-    : '<tr><td colspan="7" class="hint admin-assets-empty">Нет ссылок — добавьте из таблицы файлов</td></tr>';
+    : `<tr><td colspan="7" class="hint admin-assets-empty">${adminT('admin.links.empty')}</td></tr>`;
 
   adminLinksBody.querySelectorAll('tr[data-link-id]').forEach((row) => {
     const linkId = parseInt(row.dataset.linkId, 10);
@@ -1196,6 +1208,15 @@ function showUpload() {
 
 async function init() {
   initIconButtons();
+  if (window.UiSettings) {
+    UiSettings.onLangChange = () => {
+      if (!adminPanel.classList.contains('hidden')) {
+        loadAdminPanel();
+      } else {
+        UiSettings.applyDomI18n(adminPanel);
+      }
+    };
+  }
   updateNamePreview();
   const me = await api('/api/me');
   if (me.authenticated) {
