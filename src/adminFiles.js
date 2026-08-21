@@ -2,14 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { removeStorageFromDisk, storageExists, sendStoredFile } = require('./chunkStorage');
-const { isLinkAvailable, isStoredFileAvailable } = require('./limits');
+const { isLinkAvailable, isStoredFileAvailable, parseRemainingDownloads, parseExpiresDateInput } = require('./limits');
 const {
   bytesToMb,
   getAllStoredFilesAdmin,
   getLinksForStoredFile,
   getStoredFileById,
   updateStoredFileRename,
-  updateLinkShortNameById,
+  updateLinkById,
   touchLinksUpdatedAt,
   deleteLinksForStoredFile,
   deleteStoredFileRecord,
@@ -249,14 +249,32 @@ function handleAdminLinkUpdate(req, res) {
   }
 
   const newShortName = body.shortName.trim();
-  if (newShortName !== link.short_name) {
-    if (isShortNameTaken(newShortName)) {
-      res.status(409).json({ error: `Ссылка «${newShortName}» уже занята` });
-      return;
-    }
-    updateLinkShortNameById(linkId, newShortName);
-    touchLinksUpdatedAt(link.stored_file_id);
+  if (newShortName !== link.short_name && isShortNameTaken(newShortName)) {
+    res.status(409).json({ error: `Ссылка «${newShortName}» уже занята` });
+    return;
   }
+
+  const remainingParsed = parseRemainingDownloads(
+    body.linkRemainingDownloads,
+    link.link_download_count
+  );
+  if (remainingParsed.error) {
+    res.status(400).json({ error: remainingParsed.error });
+    return;
+  }
+
+  const expiresParsed = parseExpiresDateInput(body.linkExpiresAt);
+  if (expiresParsed.error) {
+    res.status(400).json({ error: expiresParsed.error });
+    return;
+  }
+
+  updateLinkById(linkId, {
+    shortName: newShortName,
+    linkMaxDownloads: remainingParsed.value,
+    linkExpiresAt: expiresParsed.value,
+  });
+  touchLinksUpdatedAt(link.stored_file_id);
 
   const file = mapFileRow(getStoredFileById(link.stored_file_id));
   const updatedLink = mapLinkRow(getLinkById(linkId));
