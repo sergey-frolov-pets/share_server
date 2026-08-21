@@ -754,6 +754,9 @@ function getLinksForStoredFile(storedFileId) {
       link_download_count,
       link_max_downloads,
       link_expires_at,
+      allowed_emails,
+      allowed_domains,
+      download_password_hash,
       created_at,
       updated_at
     FROM links
@@ -784,6 +787,8 @@ function updateLinkById(linkId, fields) {
     SET short_name = @shortName,
         link_max_downloads = @linkMaxDownloads,
         link_expires_at = @linkExpiresAt,
+        allowed_emails = @allowedEmails,
+        allowed_domains = @allowedDomains,
         updated_at = datetime('now')
     WHERE id = @linkId
   `).run({
@@ -791,6 +796,8 @@ function updateLinkById(linkId, fields) {
     shortName: fields.shortName,
     linkMaxDownloads: fields.linkMaxDownloads,
     linkExpiresAt: fields.linkExpiresAt,
+    allowedEmails: fields.allowedEmails,
+    allowedDomains: fields.allowedDomains,
   });
 }
 

@@ -588,22 +588,43 @@ function formatLinkRemainingValue(link) {
   return String(Math.max(0, link.maxDownloads - link.downloadCount));
 }
 
+function formatAccessListValue(items) {
+  return (items || []).join(', ');
+}
+
+function formatLinkStatsLine(link, file) {
+  const parts = [
+    `скачано ${formatDownloadLimit(link.downloadCount, link.maxDownloads)}`,
+    link.expiresAt ? `до ${formatCompactDate(link.expiresAt)}` : 'без срока',
+    `файл ${formatDownloadLimit(file.fileDownloadCount || 0, file.fileMaxDownloads)}`,
+    `создана ${formatCompactDateTime(link.createdAt)}`,
+  ];
+  if (link.hasDownloadPassword) {
+    parts.push('пароль');
+  }
+  return parts.join(' · ');
+}
+
 function getLinkRowSnapshot(row) {
   return {
     shortName: row.querySelector('.admin-link-short-name').value.trim(),
     remaining: row.querySelector('.admin-link-remaining').value.trim(),
     expires: row.querySelector('.admin-link-expires').value,
+    emails: row.querySelector('.admin-link-emails').value.trim(),
+    domains: row.querySelector('.admin-link-domains').value.trim(),
   };
 }
 
 function bindLinkRowChangeDetection(row, baseline) {
   const saveBtn = row.querySelector('.admin-link-save');
-  const inputs = row.querySelectorAll('input');
+  const inputs = row.querySelectorAll('input, textarea');
   const check = () => {
     const current = getLinkRowSnapshot(row);
     const changed = current.shortName !== baseline.shortName
       || current.remaining !== baseline.remaining
-      || current.expires !== baseline.expires;
+      || current.expires !== baseline.expires
+      || current.emails !== baseline.emails
+      || current.domains !== baseline.domains;
     saveBtn.disabled = !changed;
   };
   inputs.forEach((input) => {
@@ -714,11 +735,19 @@ function renderAdminLinksTable() {
     ? rows.map(({ link, file }) => {
       const remainingValue = formatLinkRemainingValue(link);
       const expiresValue = toDateInputValue(link.expiresAt);
+      const emailsValue = formatAccessListValue(link.allowedEmails);
+      const domainsValue = formatAccessListValue(link.allowedDomains);
+      const statsLine = formatLinkStatsLine(link, file);
+      const accessDisabled = !smtpConfigured;
+      const accessHint = accessDisabled
+        ? 'Доступ по email только с настроенным SMTP на сервере'
+        : (link.requiresAccess ? '' : 'Пусто = доступ для всех');
       return `
         <tr data-link-id="${link.id}" data-file-id="${file.id}">
           <td data-label="Ссылка">
             <input type="text" class="admin-link-short-name" value="${escapeHtml(link.shortName)}">
             <a class="hint admin-link-url" href="${escapeHtml(link.shareUrl)}" target="_blank" rel="noopener">${escapeHtml(link.shareUrl)}</a>
+            <div class="admin-link-stats hint">${escapeHtml(statsLine)}</div>
           </td>
           <td data-label="Файл">
             <span class="admin-link-file-name">${escapeHtml(file.originalName)}</span>
@@ -729,6 +758,13 @@ function renderAdminLinksTable() {
           </td>
           <td data-label="До">
             <input type="date" class="admin-link-expires" value="${escapeHtml(expiresValue)}">
+          </td>
+          <td data-label="Доступ" class="admin-link-access-cell">
+            <label class="admin-access-label hint">Email</label>
+            <textarea class="admin-link-emails" rows="2" placeholder="${accessDisabled ? 'нужен SMTP' : 'все'}"${accessDisabled ? ' disabled' : ''}>${escapeHtml(emailsValue)}</textarea>
+            <label class="admin-access-label hint">Домены</label>
+            <textarea class="admin-link-domains" rows="2" placeholder="${accessDisabled ? 'нужен SMTP' : 'все'}"${accessDisabled ? ' disabled' : ''}>${escapeHtml(domainsValue)}</textarea>
+            ${accessHint ? `<span class="hint admin-link-access-hint">${escapeHtml(accessHint)}</span>` : ''}
           </td>
           <td data-label="Статус">
             <span class="link-badge ${link.active ? 'active' : 'inactive'}">${link.active ? 'активна' : 'неактивна'}</span>
@@ -742,7 +778,7 @@ function renderAdminLinksTable() {
         </tr>
       `;
     }).join('')
-    : '<tr><td colspan="7" class="hint admin-assets-empty">Нет ссылок — добавьте из таблицы файлов</td></tr>';
+    : '<tr><td colspan="8" class="hint admin-assets-empty">Нет ссылок — добавьте из таблицы файлов</td></tr>';
 
   adminLinksBody.querySelectorAll('tr[data-link-id]').forEach((row) => {
     const linkId = parseInt(row.dataset.linkId, 10);
@@ -754,6 +790,8 @@ function renderAdminLinksTable() {
         shortName: link.shortName,
         remaining: formatLinkRemainingValue(link),
         expires: toDateInputValue(link.expiresAt),
+        emails: formatAccessListValue(link.allowedEmails),
+        domains: formatAccessListValue(link.allowedDomains),
       });
     }
   });
@@ -842,6 +880,8 @@ async function saveAdminLinkRow(e) {
   const shortName = row.querySelector('.admin-link-short-name').value.trim();
   const linkRemainingDownloads = row.querySelector('.admin-link-remaining').value.trim();
   const linkExpiresAt = row.querySelector('.admin-link-expires').value;
+  const allowedEmails = row.querySelector('.admin-link-emails').value;
+  const allowedDomains = row.querySelector('.admin-link-domains').value;
 
   try {
     const data = await api(`/api/admin/links/${linkId}`, {
@@ -850,6 +890,8 @@ async function saveAdminLinkRow(e) {
         shortName,
         linkRemainingDownloads,
         linkExpiresAt,
+        allowedEmails,
+        allowedDomains,
       }),
     });
     setMessage(adminFilesMessage, 'Ссылка обновлена', 'success');
