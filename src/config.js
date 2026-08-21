@@ -6,6 +6,9 @@ const CHUNK_SESSION_MAX_AGE_HOURS = parseInt(process.env.CHUNK_SESSION_MAX_AGE_H
 const SHORT_NAME_MIN_LENGTH = 2;
 const SHORT_NAME_MAX_LENGTH = 32;
 const SHORT_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const SMTP_CONNECTION_TIMEOUT_MS = parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '10000', 10);
+const SMTP_SEND_TIMEOUT_MS = parseInt(process.env.SMTP_SEND_TIMEOUT_MS || '15000', 10);
+const CLIENT_API_TIMEOUT_MS = 20000;
 
 module.exports = {
   port: parseInt(process.env.PORT || '3000', 10),
@@ -31,4 +34,7 @@ module.exports = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: process.env.SMTP_FROM || 'share@localhost',
+  smtpConnectionTimeoutMs: SMTP_CONNECTION_TIMEOUT_MS,
+  smtpSendTimeoutMs: SMTP_SEND_TIMEOUT_MS,
+  clientApiTimeoutMs: CLIENT_API_TIMEOUT_MS,
 };

@@ -4,6 +4,7 @@ function getShortNameFromPath() {
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const API_TIMEOUT_MS = 20000;
 
 const shortName = getShortNameFromPath();
 const title = document.getElementById('title');
@@ -77,21 +78,36 @@ function showRegistrationPending(message) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    credentials: 'same-origin',
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const err = new Error(data.error || 'Ошибка запроса');
-    err.payload = data;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(path, {
+      credentials: 'same-origin',
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error(data.error || 'Ошибка запроса');
+      err.payload = data;
+      throw err;
+    }
+    return data;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const timeoutErr = new Error('Сервер долго не отвечает. Возможно, проблема с отправкой email — попробуйте позже.');
+      timeoutErr.payload = { canResendRegistration: true, requestTimeout: true };
+      throw timeoutErr;
+    }
     throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return data;
 }
 
 function triggerFileDownload() {

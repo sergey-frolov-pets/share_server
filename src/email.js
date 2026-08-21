@@ -17,9 +17,29 @@ function getTransporter() {
       auth: config.smtpUser
         ? { user: config.smtpUser, pass: config.smtpPass }
         : undefined,
+      connectionTimeout: config.smtpConnectionTimeoutMs,
+      greetingTimeout: config.smtpConnectionTimeoutMs,
+      socketTimeout: config.smtpSendTimeoutMs,
     });
   }
   return transporter;
+}
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 async function sendEmail({ to, subject, text, html }) {
@@ -45,7 +65,11 @@ async function sendEmail({ to, subject, text, html }) {
   }
 
   try {
-    const info = await transport.sendMail(mail);
+    const info = await withTimeout(
+      transport.sendMail(mail),
+      config.smtpSendTimeoutMs,
+      `SMTP timeout after ${config.smtpSendTimeoutMs}ms`
+    );
     return {
       delivered: true,
       mode: 'smtp',
@@ -53,10 +77,11 @@ async function sendEmail({ to, subject, text, html }) {
     };
   } catch (error) {
     console.error('[email] Ошибка отправки:', error.message);
+    const isTimeout = /timeout/i.test(error.message);
     return {
       delivered: false,
       mode: 'smtp',
-      reason: 'smtp_send_failed',
+      reason: isTimeout ? 'smtp_timeout' : 'smtp_send_failed',
       error: error.message,
     };
   }

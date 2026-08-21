@@ -139,8 +139,11 @@ async function sendRegistrationInviteForDownload(res, email, shortName) {
       return;
     }
     res.status(500).json({
-      error: 'Не удалось отправить письмо для регистрации. Попробуйте позже.',
+      error: inviteResult.reason === 'smtp_timeout'
+        ? 'Сервер почты не отвечает. Проверьте SMTP_HOST/SMTP_PORT на сервере или попробуйте позже.'
+        : 'Не удалось отправить письмо для регистрации. Попробуйте позже.',
       emailSendFailed: true,
+      smtpTimeout: inviteResult.reason === 'smtp_timeout',
       canResendRegistration: true,
     });
     return;
