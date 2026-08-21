@@ -681,6 +681,16 @@ button[type="submit"]:disabled {
   background: #fafafa;
 }
 
+.upload-queue-item--waiting_file {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.upload-queue-badge--waiting_file {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .upload-queue-item--remote {
   border-color: #93c5fd;
   background: #f0f9ff;

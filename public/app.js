@@ -14,7 +14,6 @@ const adminUsersBody = document.getElementById('admin-users-body');
 const adminError = document.getElementById('admin-error');
 const storageLimitForm = document.getElementById('storage-limit-form');
 const storageUsage = document.getElementById('storage-usage');
-const storageDiskHint = document.getElementById('storage-disk-hint');
 const globalMaxStorageMb = document.getElementById('global-max-storage-mb');
 const storageLimitSuccess = document.getElementById('storage-limit-success');
 const dropZone = document.getElementById('drop-zone');
@@ -85,9 +84,6 @@ let updateUploadPromise = null;
 let updateUploader = null;
 let nameCheckTimeout = null;
 let editingShortName = null;
-let lastUploadQueueSnapshot = null;
-let lastFileRestoreState = null;
-let pickingFiles = false;
 
 function initIconButtons(root = document) {
   root.querySelectorAll('[data-icon]').forEach((btn) => {
@@ -186,10 +182,7 @@ function buildLimitPayload(linkMax, linkDays, fileMax, fileDays) {
 }
 
 function resetCreateState() {
-  uploadQueue.uploaders.forEach((uploader) => uploader.cancel().catch(() => {}));
-  uploadQueue.uploaders.clear();
-  uploadQueue.items = [];
-  uploadQueue.queuePaused = false;
+  uploadPanel.reset();
   activeQueueItemId = null;
   currentUploadId = null;
   uploadPromise = null;
@@ -197,9 +190,6 @@ function resetCreateState() {
   hide(shareForm);
   hide(shareFileLabel);
   hide(result);
-  hide(uploadQueueEl);
-  uploadQueueList.innerHTML = '';
-  lastUploadQueueSnapshot = null;
   setMessage(shareError, null);
   setMessage(nameError, null);
   shortNameInput.value = '';
@@ -214,14 +204,37 @@ function resetCreateState() {
   updateNamePreview();
   hide(queueResumeBtn);
   show(queuePauseBtn);
-  resetDropZoneHint();
 }
+
+let uploadPanel;
 
 const uploadQueue = new UploadQueue({
   apiPrefix: '/api/upload',
   fetchFn: (path, opts) => fetch(path, { credentials: 'same-origin', ...opts }),
-  onChange: renderUploadQueue,
+  onChange: (state) => uploadPanel.render(state),
   onActiveItem: handleQueueActiveItem,
+});
+
+uploadPanel = new UploadPanel({
+  queue: uploadQueue,
+  onActiveItem: handleQueueActiveItem,
+  onFileAccepted: () => {
+    hide(result);
+    setMessage(shareError, null);
+  },
+  onError: (message) => setMessage(shareError, message, 'error'),
+  elements: {
+    dropZone,
+    fileInput,
+    queueEl: uploadQueueEl,
+    queueList: uploadQueueList,
+    queueHint: uploadQueueResumeHint,
+    queueHintText: uploadQueueResumeText,
+    queueRestoreBtn: uploadQueueResumeBtn,
+    queuePauseBtn,
+    queueResumeBtn,
+    queueClearBtn,
+  },
 });
 
 const downloadQueue = new DownloadQueue({
@@ -290,292 +303,6 @@ function enqueueDownload(file) {
   });
 }
 
-function formatQueueItemProgress(item) {
-  if (typeof uploadQueue.formatItemProgressDetail === 'function') {
-    return uploadQueue.formatItemProgressDetail(item);
-  }
-  return '';
-}
-
-function formatQueueItemStatus(item) {
-  if (typeof uploadQueue.formatItemStatus === 'function') {
-    return uploadQueue.formatItemStatus(item);
-  }
-  const label = UPLOAD_QUEUE_STATUS_LABELS[item.status] || item.status;
-  return item.progress && ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
-    ? `${label} · ${item.progress}%`
-    : label;
-}
-
-function formatQueueItemBadge(item) {
-  if (typeof uploadQueue.formatItemBadge === 'function') {
-    return uploadQueue.formatItemBadge(item);
-  }
-  return null;
-}
-
-function buildUploadQueueItemHtml(item) {
-  const activeClass = item.status === 'uploading' ? ' active' : '';
-  const statusClass = ` upload-queue-item--${item.status}`;
-  const clickableClass = item.status === 'ready' ? ' upload-queue-item--clickable' : '';
-  const badge = formatQueueItemBadge(item);
-  const badgeHtml = badge
-    ? `<span class="upload-queue-badge upload-queue-badge--${badge.className}">${escapeHtml(badge.text)}</span>`
-    : '';
-  const errorHtml = item.error ? `<div class="upload-queue-item-meta upload-queue-item-error">${escapeHtml(item.error)}</div>` : '';
-
-  const progressClass = item.status === 'uploading' ? '' : ' upload-queue-item-progress--idle';
-  const progressHtml = ['pending', 'uploading', 'paused', 'remote'].includes(item.status)
-    ? `<div class="upload-queue-item-progress${progressClass}"><div class="upload-queue-item-progress-fill" style="width:${item.progress || 0}%"></div></div>`
-    : '';
-
-  const progressDetail = formatQueueItemProgress(item);
-  const progressDetailHtml = progressDetail
-    ? `<div class="upload-queue-item-progress-meta">${escapeHtml(progressDetail)}</div>`
-    : '';
-
-  return `
-    <li class="upload-queue-item${activeClass}${statusClass}${clickableClass}" data-queue-id="${item.id}" data-status="${item.status}">
-      <div class="upload-queue-item-row">
-        <div class="upload-queue-item-text">
-          <div class="upload-queue-item-title-row">
-            <span class="upload-queue-item-name">${escapeHtml(item.name)}</span>
-            ${badgeHtml}
-          </div>
-          <div class="upload-queue-item-sub">
-            <span class="upload-queue-item-status">${escapeHtml(formatQueueItemStatus(item))}</span>
-          </div>
-        </div>
-      </div>
-      ${progressDetailHtml}
-      ${progressHtml}
-      ${errorHtml}
-    </li>
-  `;
-}
-
-function bindUploadQueueItemEvents(root = uploadQueueList) {
-  root.querySelectorAll('.upload-queue-item--ready').forEach((row) => {
-    row.addEventListener('click', () => uploadQueue.setActiveItem(row.dataset.queueId));
-  });
-}
-
-function isUploadQueueProgressOnlyUpdate(prev, state) {
-  if (!prev || prev.items.length !== state.items.length) return false;
-  if (prev.queuePaused !== state.queuePaused) return false;
-  if (prev.activeUploadCount !== state.activeUploadCount) return false;
-  return state.items.every((item, index) => {
-    const previous = prev.items[index];
-    return previous
-      && previous.id === item.id
-      && previous.status === item.status
-      && previous.error === item.error
-      && previous.uploadId === item.uploadId
-      && previous.sessionId === item.sessionId
-      && previous.serverStatus === item.serverStatus;
-  });
-}
-
-function updateUploadQueueResumeHint(state, restoreState = lastFileRestoreState) {
-  if (!uploadQueueResumeHint || !uploadQueueResumeText) return;
-
-  const needsReselect = state.items.some((item) => (
-    item.sessionId && !item.file && item.status === 'paused'
-  ));
-  const isUploading = state.items.some((item) => item.status === 'uploading');
-
-  if (!needsReselect || isUploading) {
-    hide(uploadQueueResumeHint);
-    if (uploadQueueResumeBtn) hide(uploadQueueResumeBtn);
-    return;
-  }
-
-  show(uploadQueueResumeHint);
-
-  if (restoreState?.pendingPermission > 0) {
-    uploadQueueResumeText.textContent = 'Разрешите доступ к файлам или выберите их в зоне выше — загрузка продолжится автоматически.';
-    if (uploadQueueResumeBtn) show(uploadQueueResumeBtn);
-    return;
-  }
-
-  uploadQueueResumeText.textContent = 'Выберите тот же файл в зоне выше — загрузка продолжится автоматически.';
-  if (uploadQueueResumeBtn) hide(uploadQueueResumeBtn);
-}
-
-async function tryRestoreStoredFiles(allowRequest = false) {
-  const result = await uploadQueue.restoreFilesFromStoredHandles({ allowRequest });
-  lastFileRestoreState = result;
-  updateUploadQueueResumeHint(uploadQueue.getState(), result);
-  if (result.restored > 0) {
-    resetDropZoneHint();
-  }
-  return result;
-}
-
-async function ingestFileForUpload(file, handle = null) {
-  if (!file) return false;
-
-  if (global.FileHandleStore?.saveHandle && handle) {
-    await global.FileHandleStore.saveHandle(file, handle);
-  }
-
-  const added = uploadQueue.addFile(file);
-  if (added) {
-    show(uploadQueueEl);
-    hide(result);
-    setMessage(shareError, null);
-    updateDropZoneHintForQueue();
-  } else {
-    const waiting = uploadQueue.getWaitingForFileItems?.() || [];
-    const matched = waiting.some((item) => {
-      const fileName = (file.name || '').split(/[/\\]/).pop().normalize('NFC');
-      const itemName = (item.name || '').split(/[/\\]/).pop().normalize('NFC');
-      return fileName === itemName && item.size === file.size;
-    });
-    if (waiting.length && matched) {
-      setMessage(shareError, 'Не удалось возобновить — попробуйте ещё раз', 'error');
-    } else if (waiting.length) {
-      setMessage(shareError, 'Выберите тот же файл, что в очереди — загрузка продолжится автоматически', 'error');
-    }
-  }
-  return added;
-}
-
-async function filesFromDropEvent(event) {
-  const files = [];
-  const handles = [];
-  const items = [...(event.dataTransfer?.items || [])];
-
-  for (const item of items) {
-    if (item.kind !== 'file') continue;
-
-    if (typeof item.getAsFileSystemHandle === 'function') {
-      try {
-        const handle = await item.getAsFileSystemHandle();
-        if (handle?.kind === 'file') {
-          files.push(await handle.getFile());
-          handles.push(handle);
-          continue;
-        }
-      } catch (_err) {
-        // fallback to File
-      }
-    }
-
-    const file = item.getAsFile();
-    if (file) {
-      files.push(file);
-      handles.push(null);
-    }
-  }
-
-  if (!files.length && event.dataTransfer?.files?.length) {
-    return {
-      files: [...event.dataTransfer.files],
-      handles: [...event.dataTransfer.files].map(() => null),
-    };
-  }
-
-  return { files, handles };
-}
-
-async function fileFromDropEvent(event) {
-  const { files, handles } = await filesFromDropEvent(event);
-  if (!files.length) return null;
-  return {
-    file: files[0],
-    handle: handles[0] || null,
-    ignoredCount: Math.max(0, files.length - 1),
-  };
-}
-
-function pickFileForUpload() {
-  if (pickingFiles) return;
-  pickingFiles = true;
-  const onWindowFocus = () => {
-    window.removeEventListener('focus', onWindowFocus);
-    setTimeout(() => {
-      if (!fileInput.files?.length) pickingFiles = false;
-    }, 400);
-  };
-  window.addEventListener('focus', onWindowFocus);
-  fileInput.click();
-}
-
-function renderUploadQueue(state) {
-  if (!state.items.length) {
-    hide(uploadQueueEl);
-    hide(uploadQueueResumeHint);
-    uploadQueueList.innerHTML = '';
-    lastUploadQueueSnapshot = null;
-    return;
-  }
-
-  show(uploadQueueEl);
-  updateUploadQueueResumeHint(state);
-  updateDropZoneHintForQueue();
-
-  if (isUploadQueueProgressOnlyUpdate(lastUploadQueueSnapshot, state)) {
-    state.items.forEach((item) => {
-      const row = uploadQueueList.querySelector(`[data-queue-id="${item.id}"]`);
-      if (!row) return;
-      row.className = `upload-queue-item${item.status === 'uploading' ? ' active' : ''} upload-queue-item--${item.status}`;
-      row.dataset.status = item.status;
-
-      const badge = formatQueueItemBadge(item);
-      let badgeEl = row.querySelector('.upload-queue-badge');
-      if (badge) {
-        if (!badgeEl) {
-          const titleRow = row.querySelector('.upload-queue-item-title-row');
-          if (titleRow) {
-            titleRow.insertAdjacentHTML('beforeend', `<span class="upload-queue-badge upload-queue-badge--${badge.className}">${escapeHtml(badge.text)}</span>`);
-            badgeEl = row.querySelector('.upload-queue-badge');
-          }
-        } else {
-          badgeEl.className = `upload-queue-badge upload-queue-badge--${badge.className}`;
-          badgeEl.textContent = badge.text;
-        }
-      } else if (badgeEl) {
-        badgeEl.remove();
-      }
-
-      const statusEl = row.querySelector('.upload-queue-item-status');
-      if (statusEl) statusEl.textContent = formatQueueItemStatus(item);
-      const progressMetaEl = row.querySelector('.upload-queue-item-progress-meta');
-      const progressDetail = formatQueueItemProgress(item);
-      if (progressMetaEl) {
-        progressMetaEl.textContent = progressDetail;
-        progressMetaEl.classList.toggle('hidden', !progressDetail);
-      }
-      const fill = row.querySelector('.upload-queue-item-progress-fill');
-      if (fill) fill.style.width = `${item.progress || 0}%`;
-    });
-    lastUploadQueueSnapshot = {
-      queuePaused: state.queuePaused,
-      activeUploadCount: state.activeUploadCount,
-      items: state.items.map((item) => ({ ...item })),
-    };
-    return;
-  }
-
-  uploadQueueList.innerHTML = state.items.map((item) => buildUploadQueueItemHtml(item)).join('');
-  bindUploadQueueItemEvents();
-
-  if (state.queuePaused) {
-    hide(queuePauseBtn);
-    show(queueResumeBtn);
-  } else {
-    show(queuePauseBtn);
-    hide(queueResumeBtn);
-  }
-
-  lastUploadQueueSnapshot = {
-    queuePaused: state.queuePaused,
-    activeUploadCount: state.activeUploadCount,
-    items: state.items.map((item) => ({ ...item })),
-  };
-}
-
 async function handleQueueActiveItem(item) {
   if (!item) {
     hide(shareForm);
@@ -603,58 +330,7 @@ async function handleQueueActiveItem(item) {
 }
 
 async function restoreActiveUploads() {
-  try {
-    const { sessions } = await api('/api/upload/sessions');
-    if (uploadQueue.syncSessionsFromServer(sessions)) {
-      show(uploadQueueEl);
-    }
-    await uploadQueue.pauseSessionsWithoutFile();
-    const restoreResult = await tryRestoreStoredFiles(false);
-    updateDropZoneHintForQueue();
-  } catch (_err) {
-    // ignore restore errors on load
-  }
-}
-
-function updateDropZoneHintForQueue() {
-  const dropHint = dropZone.querySelector('.hint');
-  if (!dropHint) return;
-
-  const waiting = uploadQueue.getWaitingForFileItems?.() || [];
-  if (!waiting.length) {
-    resetDropZoneHint();
-    return;
-  }
-
-  if (waiting.length === 1) {
-    const name = waiting[0].name.length > 40 ? `${waiting[0].name.slice(0, 37)}…` : waiting[0].name;
-    dropHint.textContent = `выберите тот же файл: ${name}`;
-    return;
-  }
-
-  dropHint.textContent = `выберите файлы из очереди (${waiting.length}) — по одному, тот же файл`;
-}
-
-function resetDropZoneHint() {
-  const dropHint = dropZone.querySelector('.hint');
-  if (!dropHint) return;
-
-  const waiting = uploadQueue.getWaitingForFileItems?.() || [];
-  if (waiting.length) {
-    updateDropZoneHintForQueue();
-    return;
-  }
-
-  dropHint.textContent = 'или нажмите — один файл за раз, до 3 параллельно';
-}
-
-function enqueueFile(file) {
-  if (!file) return;
-  uploadQueue.addFile(file);
-  show(uploadQueueEl);
-  hide(result);
-  setMessage(shareError, null);
-  updateDropZoneHintForQueue();
+  await uploadPanel.restoreAfterLogin();
 }
 
 function resetManageState() {
@@ -697,7 +373,7 @@ function handleFile(file, isUpdate = false) {
     startUpdateUpload(file);
     return;
   }
-  enqueueFile(file);
+  uploadPanel.handleFile(file).catch(() => {});
 }
 
 function startUpdateUpload(file) {
@@ -742,9 +418,6 @@ async function loadAdminPanel() {
     storageUsage.textContent = stats.maxStorageMb
       ? `Использовано: ${stats.storageMb} МБ из ${stats.maxStorageMb} МБ (свободно ${stats.storageFreeMb} МБ)`
       : `Использовано: ${stats.storageMb} МБ (лимит не задан)`;
-    if (storageDiskHint) {
-      storageDiskHint.textContent = formatPhysicalDiskHint(stats);
-    }
     globalMaxStorageMb.value = stats.maxStorageMb ?? '';
 
     adminStats.innerHTML = [
@@ -798,13 +471,6 @@ function escapeHtml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-function formatPhysicalDiskHint(stats) {
-  if (stats.diskAvailableMb == null || stats.diskTotalMb == null) {
-    return 'Не удалось определить объём физического диска';
-  }
-  return `На физическом диске доступно ${stats.diskAvailableMb} МБ из ${stats.diskTotalMb} МБ`;
 }
 
 async function loadAdminFiles() {
@@ -971,53 +637,6 @@ storageLimitForm.addEventListener('submit', async (e) => {
     setMessage(adminError, err.message, 'error');
   }
 });
-
-dropZone.addEventListener('click', () => {
-  pickFileForUpload();
-});
-dropZone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  dropZone.classList.add('dragover');
-});
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropZone.classList.remove('dragover');
-  fileFromDropEvent(e)
-    .then((payload) => {
-      if (!payload?.file) return;
-      if (payload.ignoredCount > 0) {
-        setMessage(shareError, 'Перетащите один файл за раз', 'error');
-      } else {
-        setMessage(shareError, null);
-      }
-      return ingestFileForUpload(payload.file, payload.handle);
-    })
-    .catch(() => {});
-});
-
-fileInput.addEventListener('change', () => {
-  pickingFiles = false;
-  const file = fileInput.files?.[0];
-  if (file) {
-    ingestFileForUpload(file, null).catch(() => {});
-  }
-  fileInput.value = '';
-});
-
-fileInput.addEventListener('cancel', () => {
-  pickingFiles = false;
-});
-
-if (uploadQueueResumeBtn) {
-  uploadQueueResumeBtn.addEventListener('click', () => {
-    tryRestoreStoredFiles(true).catch(() => {});
-  });
-}
-
-queuePauseBtn.addEventListener('click', () => uploadQueue.pauseQueue());
-queueResumeBtn.addEventListener('click', () => uploadQueue.resumeQueue());
-queueClearBtn.addEventListener('click', () => uploadQueue.clearFinished());
 
 downloadQueuePauseBtn.addEventListener('click', () => downloadQueue.pauseQueue());
 downloadQueueResumeBtn.addEventListener('click', () => downloadQueue.resumeQueue());

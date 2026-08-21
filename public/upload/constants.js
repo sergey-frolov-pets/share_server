@@ -1,0 +1,66 @@
+(function (global) {
+  const UPLOAD_CONFIG = Object.freeze({
+    MAX_CONCURRENT: 3,
+    NOTIFY_THROTTLE_MS: 50,
+    SERVER_SYNC_MS: 1000,
+    DISPLAY_TICK_MS: 250,
+    SESSION_STORAGE_PREFIX: 'shareChunkUpload:',
+    DEFAULT_API_PREFIX: '/api/upload',
+    DROP_HINT_MAX_NAME_LENGTH: 40,
+    FILE_PICKER_CANCEL_MS: 400,
+    SPEED_SAMPLE_MIN_SEC: 0.15,
+    SPEED_SMOOTHING_MIN_SEC: 0.3,
+    SPEED_SMOOTHING_PREV_WEIGHT: 0.7,
+    SPEED_SMOOTHING_NEW_WEIGHT: 0.3,
+    CHUNK_UPLOAD_MAX_RETRIES: 5,
+    CHUNK_UPLOAD_RETRY_BASE_MS: 2000,
+    CHUNK_UPLOAD_PAUSE_POLL_MS: 300,
+  });
+
+  const ITEM_STATUS = Object.freeze({
+    WAITING_FILE: 'waiting_file',
+    PENDING: 'pending',
+    UPLOADING: 'uploading',
+    PAUSED: 'paused',
+    READY: 'ready',
+    ERROR: 'error',
+    CANCELLED: 'cancelled',
+    SHARED: 'shared',
+  });
+
+  const SERVER_SESSION_STATUS = Object.freeze({
+    ACTIVE: 'active',
+    PAUSED: 'paused',
+  });
+
+  const STATUS_LABELS = Object.freeze({
+    [ITEM_STATUS.WAITING_FILE]: 'Нужен файл',
+    [ITEM_STATUS.PENDING]: 'Ожидает',
+    [ITEM_STATUS.UPLOADING]: 'Загружается',
+    [ITEM_STATUS.PAUSED]: 'На паузе',
+    [ITEM_STATUS.READY]: 'Готов',
+    [ITEM_STATUS.ERROR]: 'Ошибка',
+    [ITEM_STATUS.CANCELLED]: 'Отменено',
+    [ITEM_STATUS.SHARED]: 'Ссылка создана',
+  });
+
+  const TERMINAL_STATUSES = Object.freeze([
+    ITEM_STATUS.SHARED,
+    ITEM_STATUS.CANCELLED,
+  ]);
+
+  const ACTIVE_TRANSFER_STATUSES = Object.freeze([
+    ITEM_STATUS.PENDING,
+    ITEM_STATUS.UPLOADING,
+    ITEM_STATUS.PAUSED,
+    ITEM_STATUS.WAITING_FILE,
+    ITEM_STATUS.ERROR,
+  ]);
+
+  global.UPLOAD_CONFIG = UPLOAD_CONFIG;
+  global.UPLOAD_ITEM_STATUS = ITEM_STATUS;
+  global.UPLOAD_SERVER_SESSION_STATUS = SERVER_SESSION_STATUS;
+  global.UPLOAD_QUEUE_STATUS_LABELS = STATUS_LABELS;
+  global.UPLOAD_MAX_CONCURRENT = UPLOAD_CONFIG.MAX_CONCURRENT;
+  global.CHUNK_UPLOAD_STORAGE_PREFIX = UPLOAD_CONFIG.SESSION_STORAGE_PREFIX;
+})(window);

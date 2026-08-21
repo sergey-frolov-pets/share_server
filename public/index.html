@@ -39,13 +39,13 @@
     <div id="create-panel">
       <div id="drop-zone" class="drop-zone">
         <p>Перетащите файл сюда</p>
-        <p class="hint">или нажмите — один файл за раз, до 3 параллельно</p>
+        <p class="hint">или нажмите — один файл за раз</p>
         <input type="file" id="file-input" hidden>
       </div>
 
       <div id="upload-queue" class="upload-queue hidden">
         <div class="upload-queue-header">
-          <h3 class="upload-queue-title">Загрузка <span class="upload-queue-hint">до 3 файлов параллельно</span></h3>
+          <h3 class="upload-queue-title">Очередь</h3>
           <div class="upload-queue-actions">
             <button type="button" id="queue-pause-btn" class="btn-icon btn-secondary" data-icon="pause" title="Пауза очереди" aria-label="Пауза очереди"></button>
             <button type="button" id="queue-resume-btn" class="btn-icon btn-secondary hidden" data-icon="play" title="Продолжить очередь" aria-label="Продолжить очередь"></button>
@@ -54,7 +54,7 @@
         </div>
         <p id="upload-queue-resume-hint" class="upload-queue-resume-hint hidden">
           <span id="upload-queue-resume-text"></span>
-          <button type="button" id="upload-queue-resume-btn" class="queue-tool-btn hidden">Разрешить доступ к файлам</button>
+          <button type="button" id="upload-queue-resume-btn" class="queue-tool-btn hidden">Разрешить доступ</button>
         </p>
         <ul id="upload-queue-list" class="upload-queue-list"></ul>
       </div>
@@ -297,8 +297,12 @@
 
   <script src="/icons.js"></script>
   <script src="/file-handle-store.js"></script>
+  <script src="/upload/constants.js"></script>
+  <script src="/upload/file-matcher.js"></script>
+  <script src="/upload/session-link.js"></script>
   <script src="/chunk-upload.js"></script>
   <script src="/upload-queue.js"></script>
+  <script src="/upload-panel.js"></script>
   <script src="/download-queue.js"></script>
   <script src="/app.js"></script>
 </body>
