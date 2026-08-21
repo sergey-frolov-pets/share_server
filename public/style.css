@@ -8,6 +8,32 @@
   --accent-hover: #1d4ed8;
   --error: #dc2626;
   --success: #16a34a;
+  --input-bg: #ffffff;
+  --surface-muted: #f4f4f5;
+  --surface-hover: #eff6ff;
+  --surface-active: #f8fbff;
+  --progress-bg: #e5e7eb;
+  --tooltip-bg: #18181b;
+  --tooltip-text: #fafafa;
+}
+
+[data-theme="dark"] {
+  --bg: #09090b;
+  --card: #18181b;
+  --text: #fafafa;
+  --muted: #a1a1aa;
+  --border: #3f3f46;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --error: #f87171;
+  --success: #4ade80;
+  --input-bg: #27272a;
+  --surface-muted: #27272a;
+  --surface-hover: #1e293b;
+  --surface-active: #1f2937;
+  --progress-bg: #3f3f46;
+  --tooltip-bg: #fafafa;
+  --tooltip-text: #18181b;
 }
 
 * {
@@ -65,13 +91,17 @@ label {
 
 input[type="text"],
 input[type="password"],
-input[type="number"] {
+input[type="number"],
+input[type="email"],
+input[type="date"] {
   width: 100%;
   margin-top: 6px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 1rem;
+  background: var(--input-bg);
+  color: var(--text);
 }
 
 textarea {
@@ -84,6 +114,8 @@ textarea {
   resize: vertical;
   min-height: 56px;
   font-family: inherit;
+  background: var(--input-bg);
+  color: var(--text);
 }
 
 input:focus,
@@ -138,7 +170,7 @@ button[type="submit"]:disabled {
 
 .drop-zone.dragover {
   border-color: var(--accent);
-  background: #eff6ff;
+  background: var(--surface-hover);
 }
 
 .drop-zone p {
@@ -386,7 +418,7 @@ button[type="submit"]:disabled {
 }
 
 .stat-card {
-  background: var(--bg);
+  background: var(--surface-muted);
   border-radius: 8px;
   padding: 12px;
 }
@@ -818,15 +850,77 @@ button[type="submit"]:disabled {
   padding: 8px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--card);
   cursor: pointer;
   font-size: 0.875rem;
+  color: var(--text);
 }
 
 .admin-assets-tab.active {
   border-color: var(--accent);
   color: var(--accent);
-  background: #f8fbff;
+  background: var(--surface-active);
+}
+
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.admin-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-toggle-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.admin-toggle-btn {
+  min-width: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.admin-toggle-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-active);
+}
+
+.press-tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  transform: translate(-50%, -100%);
+}
+
+.press-tooltip.hidden {
+  display: none;
 }
 
 .admin-assets-stats {
@@ -906,7 +1000,7 @@ button[type="submit"]:disabled {
     border-radius: 10px;
     padding: 12px;
     margin-bottom: 12px;
-    background: #fff;
+    background: var(--card);
   }
 
   .admin-assets-table tbody td {
