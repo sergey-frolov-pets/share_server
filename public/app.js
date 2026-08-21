@@ -14,6 +14,7 @@ const adminUsersBody = document.getElementById('admin-users-body');
 const adminError = document.getElementById('admin-error');
 const storageLimitForm = document.getElementById('storage-limit-form');
 const storageUsage = document.getElementById('storage-usage');
+const storageDiskHint = document.getElementById('storage-disk-hint');
 const globalMaxStorageMb = document.getElementById('global-max-storage-mb');
 const storageLimitSuccess = document.getElementById('storage-limit-success');
 const dropZone = document.getElementById('drop-zone');
@@ -737,6 +738,9 @@ async function loadAdminPanel() {
     storageUsage.textContent = stats.maxStorageMb
       ? `Использовано: ${stats.storageMb} МБ из ${stats.maxStorageMb} МБ (свободно ${stats.storageFreeMb} МБ)`
       : `Использовано: ${stats.storageMb} МБ (лимит не задан)`;
+    if (storageDiskHint) {
+      storageDiskHint.textContent = formatPhysicalDiskHint(stats);
+    }
     globalMaxStorageMb.value = stats.maxStorageMb ?? '';
 
     adminStats.innerHTML = [
@@ -790,6 +794,13 @@ function escapeHtml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function formatPhysicalDiskHint(stats) {
+  if (stats.diskAvailableMb == null || stats.diskTotalMb == null) {
+    return 'Не удалось определить объём физического диска';
+  }
+  return `На физическом диске доступно ${stats.diskAvailableMb} МБ из ${stats.diskTotalMb} МБ`;
 }
 
 async function loadAdminFiles() {
