@@ -9,6 +9,7 @@ const {
 } = require('./db');
 const { daysToDatetime } = require('./limits');
 const { getUploadDiskSpace } = require('./diskSpace');
+const { isEmailConfigured } = require('./email');
 
 function handleAdminStats(req, res) {
   const stats = getAdminStats();
@@ -18,6 +19,7 @@ function handleAdminStats(req, res) {
     stats.diskAvailableMb = bytesToMb(disk.availableBytes);
     stats.diskFreeMb = bytesToMb(disk.freeBytes);
   }
+  stats.smtpConfigured = isEmailConfigured();
   res.json(stats);
 }
 

@@ -50,18 +50,20 @@ async function sendRegistrationInvite(email, shortName) {
     'Ссылка действует 24 часа.',
   ].join('\n');
 
-  await sendEmail({
+  const result = await sendEmail({
     to: email,
     subject: 'Регистрация для доступа к файлу',
     text,
   });
+
+  return { ...result, registerUrl };
 }
 
 async function sendPasswordResetEmail(email) {
   const normalized = normalizeEmail(email);
   const user = getUserByEmail(normalized);
   if (!user) {
-    return { sent: false, reason: 'not_found' };
+    return { delivered: false, reason: 'not_found' };
   }
 
   const token = generateTokenValue();
@@ -82,13 +84,21 @@ async function sendPasswordResetEmail(email) {
     'Ссылка действует 1 час. Если вы не запрашивали сброс — проигнорируйте письмо.',
   ].join('\n');
 
-  await sendEmail({
+  const result = await sendEmail({
     to: normalized,
     subject: 'Сброс пароля Share Server',
     text,
   });
 
-  return { sent: true };
+  if (!result.delivered) {
+    return {
+      delivered: false,
+      reason: result.reason || 'smtp_send_failed',
+      error: result.error,
+    };
+  }
+
+  return { delivered: true, mode: result.mode };
 }
 
 function handleRegister(req, res) {
@@ -160,10 +170,25 @@ async function handleForgotPassword(req, res) {
   const normalized = normalizeEmail(req.body.email);
   const result = await sendPasswordResetEmail(normalized);
 
-  if (!result.sent) {
+  if (result.reason === 'not_found') {
     res.json({
       ok: true,
       message: 'Если email зарегистрирован, письмо будет отправлено',
+    });
+    return;
+  }
+
+  if (!result.delivered) {
+    if (result.reason === 'smtp_not_configured') {
+      res.status(503).json({
+        error: 'Отправка email на сервере не настроена. Обратитесь к администратору.',
+        emailNotConfigured: true,
+      });
+      return;
+    }
+    res.status(500).json({
+      error: 'Не удалось отправить письмо. Попробуйте позже или обратитесь к администратору.',
+      emailSendFailed: true,
     });
     return;
   }
