@@ -1,5 +1,6 @@
 const loginSection = document.getElementById('login-section');
 const uploadSection = document.getElementById('upload-section');
+const mainContainer = document.querySelector('main.container');
 const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
@@ -620,9 +621,12 @@ function startUpdateUpload(file) {
 }
 
 function switchTab(active) {
+  const isAdmin = active === 'admin';
   tabCreate.classList.toggle('active', active === 'create');
   tabManage.classList.toggle('active', active === 'manage');
   tabAdmin.classList.toggle('active', active === 'admin');
+  if (mainContainer) mainContainer.classList.toggle('container--wide', isAdmin);
+  uploadSection.classList.toggle('card--wide', isAdmin);
   hide(createPanel);
   hide(managePanel);
   hide(adminPanel);

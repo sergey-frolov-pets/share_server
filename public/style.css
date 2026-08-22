@@ -28,12 +28,24 @@ body {
   padding: 0 16px;
 }
 
+.container.container--wide {
+  max-width: none;
+  width: 100%;
+  margin: 8px 0;
+  padding: 0 8px;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px;
   overflow: hidden;
+}
+
+.card.card--wide {
+  border-radius: 8px;
+  padding: 10px 8px;
 }
 
 #create-panel {
@@ -891,6 +903,143 @@ button[type="submit"]:disabled {
   margin-bottom: 10px;
 }
 
+#admin-panel .table-wrap {
+  overflow-x: hidden;
+}
+
+#admin-panel .data-table {
+  table-layout: fixed;
+}
+
+#admin-files-table th:nth-child(1),
+#admin-files-table td:nth-child(1) {
+  width: 30%;
+}
+
+#admin-files-table th:nth-child(2),
+#admin-files-table td:nth-child(2) {
+  width: 7%;
+}
+
+#admin-files-table th:nth-child(3),
+#admin-files-table td:nth-child(3) {
+  width: 9%;
+}
+
+#admin-files-table th:nth-child(4),
+#admin-files-table td:nth-child(4) {
+  width: 12%;
+}
+
+#admin-files-table th:nth-child(5),
+#admin-files-table td:nth-child(5) {
+  width: 9%;
+}
+
+#admin-files-table th:nth-child(6),
+#admin-files-table td:nth-child(6) {
+  width: 15%;
+}
+
+#admin-links-table th:nth-child(1),
+#admin-links-table td:nth-child(1) {
+  width: 20%;
+}
+
+#admin-links-table th:nth-child(2),
+#admin-links-table td:nth-child(2) {
+  width: 14%;
+}
+
+#admin-links-table th:nth-child(3),
+#admin-links-table td:nth-child(3) {
+  width: 7%;
+}
+
+#admin-links-table th:nth-child(4),
+#admin-links-table td:nth-child(4) {
+  width: 7%;
+}
+
+#admin-links-table th:nth-child(5),
+#admin-links-table td:nth-child(5) {
+  width: 9%;
+}
+
+#admin-links-table th:nth-child(6),
+#admin-links-table td:nth-child(6) {
+  width: 16%;
+}
+
+#admin-links-table th:nth-child(7),
+#admin-links-table td:nth-child(7) {
+  width: 8%;
+}
+
+#admin-links-table th:nth-child(8),
+#admin-links-table td:nth-child(8) {
+  width: 11%;
+}
+
+#admin-users-table th:nth-child(1),
+#admin-users-table td:nth-child(1) {
+  width: 22%;
+}
+
+#admin-users-table th:nth-child(2),
+#admin-users-table td:nth-child(2),
+#admin-users-table th:nth-child(3),
+#admin-users-table td:nth-child(3) {
+  width: 8%;
+}
+
+#admin-users-table th:nth-child(4),
+#admin-users-table td:nth-child(4) {
+  width: 10%;
+}
+
+#admin-users-table th:nth-child(5),
+#admin-users-table td:nth-child(5) {
+  width: 10%;
+}
+
+#admin-users-table th:nth-child(6),
+#admin-users-table td:nth-child(6) {
+  width: 22%;
+}
+
+#admin-users-table th:nth-child(7),
+#admin-users-table td:nth-child(7) {
+  width: 8%;
+}
+
+.container--wide .stats-grid {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.container--wide .upload-queue {
+  margin-top: 12px;
+  padding: 10px 8px;
+}
+
+#admin-panel .data-table th,
+#admin-panel .data-table td {
+  padding: 6px 4px;
+}
+
+#admin-panel .user-limits {
+  min-width: 0;
+}
+
+#admin-panel .admin-assets-table .admin-link-short-name,
+#admin-panel .admin-assets-table .admin-link-emails,
+#admin-panel .admin-assets-table .admin-link-domains,
+#admin-panel .admin-assets-table .admin-link-remaining,
+#admin-panel .admin-assets-table .admin-link-expires {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .admin-row-actions {
   display: flex;
   gap: 6px;
@@ -922,11 +1071,11 @@ button[type="submit"]:disabled {
 }
 
 .admin-link-access-cell {
-  min-width: 140px;
+  min-width: 0;
 }
 
 .admin-file-delete-cell {
-  min-width: 120px;
+  min-width: 0;
 }
 
 .admin-file-delete-days,
@@ -986,11 +1135,11 @@ button[type="submit"]:disabled {
 }
 
 .admin-link-remaining {
-  max-width: 80px;
+  max-width: 100%;
 }
 
 .admin-link-expires {
-  max-width: 148px;
+  max-width: 100%;
 }
 
 .admin-assets-empty {
@@ -1177,7 +1326,7 @@ button[type="submit"]:disabled {
 }
 
 .admin-file-name-cell {
-  min-width: 180px;
+  min-width: 0;
 }
 
 .admin-file-display-name {
