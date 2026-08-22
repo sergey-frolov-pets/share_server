@@ -1058,7 +1058,8 @@ async function openAdminCreateLinkModal(e) {
   if (!file) return;
 
   adminCreateLinkFileId = fileId;
-  const fileName = row.querySelector('.admin-file-name').value.trim() || file.originalName;
+  const displayEl = row.querySelector('.admin-file-display-name');
+  const fileName = (displayEl?.textContent || '').trim() || file.originalName;
   adminCreateLinkFileLabel.textContent = `Файл: ${fileName}`;
   resetAdminCreateLinkForm();
   setMessage(adminCreateLinkError, null);
