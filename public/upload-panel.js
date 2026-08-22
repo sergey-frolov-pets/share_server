@@ -16,6 +16,7 @@
       this.onActiveItem = options.onActiveItem || (() => {});
       this.onFileAccepted = options.onFileAccepted || (() => {});
       this.onError = options.onError || (() => {});
+      this.onBeforeUpload = options.onBeforeUpload || null;
 
       this.elements = options.elements;
       this.lastSnapshot = null;
@@ -26,7 +27,16 @@
     }
 
     bindEvents() {
-      const { dropZone, fileInput, queuePauseBtn, queueResumeBtn, queueClearBtn, restoreBtn } = this.elements;
+      const {
+        dropZone,
+        fileInput,
+        folderInput,
+        folderPickBtn,
+        queuePauseBtn,
+        queueResumeBtn,
+        queueClearBtn,
+        restoreBtn,
+      } = this.elements;
 
       dropZone.addEventListener('click', () => this.openFilePicker());
       dropZone.addEventListener('dragover', (event) => {
@@ -42,14 +52,26 @@
 
       fileInput.addEventListener('change', () => {
         this.pickingFile = false;
-        const file = fileInput.files?.[0];
-        if (file) this.handleFile(file).catch(() => {});
+        const files = [...(fileInput.files || [])];
+        if (files.length) this.handleFiles(files).catch(() => {});
         fileInput.value = '';
       });
 
       fileInput.addEventListener('cancel', () => {
         this.pickingFile = false;
       });
+
+      if (folderPickBtn && folderInput) {
+        folderPickBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          folderInput.click();
+        });
+        folderInput.addEventListener('change', () => {
+          const files = [...(folderInput.files || [])];
+          if (files.length) this.handleFolderPick(files).catch(() => {});
+          folderInput.value = '';
+        });
+      }
 
       queuePauseBtn.addEventListener('click', () => this.queue.pauseQueue());
       queueResumeBtn.addEventListener('click', () => this.queue.resumeQueue());
@@ -76,13 +98,14 @@
     }
 
     async handleDrop(event) {
-      const file = await this.readDropFile(event);
-      if (!file) return;
-      await this.handleFile(file);
+      const files = await this.readDropFiles(event);
+      if (!files.length) return;
+      await this.handleFiles(files);
     }
 
-    async readDropFile(event) {
+    async readDropFiles(event) {
       const items = [...(event.dataTransfer?.items || [])];
+      const files = [];
       for (const item of items) {
         if (item.kind !== 'file') continue;
         if (typeof item.getAsFileSystemHandle === 'function') {
@@ -93,16 +116,62 @@
               if (global.FileHandleStore?.saveHandle) {
                 await global.FileHandleStore.saveHandle(file, handle);
               }
-              return file;
+              files.push(file);
+              continue;
             }
           } catch (_err) {
             // fallback below
           }
         }
         const file = item.getAsFile();
-        if (file) return file;
+        if (file) files.push(file);
       }
-      return event.dataTransfer?.files?.[0] || null;
+      if (!files.length && event.dataTransfer?.files?.length) {
+        return [...event.dataTransfer.files];
+      }
+      return files;
+    }
+
+    async readDropFile(event) {
+      const files = await this.readDropFiles(event);
+      return files[0] || null;
+    }
+
+    async handleFolderPick(files) {
+      if (this.onBeforeUpload) {
+        const result = await this.onBeforeUpload(files, global.ZIP_UPLOAD_MODES?.FOLDER);
+        if (result?.cancelled) return;
+        const uploadFiles = result?.files || [];
+        for (const file of uploadFiles) {
+          await this.handleFile(file);
+        }
+        return;
+      }
+      for (const file of files) {
+        await this.handleFile(file);
+      }
+    }
+
+    async handleFiles(files) {
+      const list = Array.from(files).filter((file) => file && Number.isFinite(file.size));
+      if (!list.length) return;
+
+      if (this.onBeforeUpload) {
+        const mode = list.length === 1
+          ? global.ZIP_UPLOAD_MODES?.SINGLE
+          : global.ZIP_UPLOAD_MODES?.FILES;
+        const result = await this.onBeforeUpload(list, mode);
+        if (result?.cancelled) return;
+        const uploadFiles = result?.files || [];
+        for (const file of uploadFiles) {
+          await this.handleFile(file);
+        }
+        return;
+      }
+
+      for (const file of list) {
+        await this.handleFile(file);
+      }
     }
 
     async handleFile(file, handle = null) {
@@ -196,7 +265,7 @@
     }
 
     defaultHintText() {
-      return `или нажмите — один файл, до ${UPLOAD_CONFIG.MAX_CONCURRENT} параллельно`;
+      return 'или нажмите — файлы по одному, до 3 параллельно';
     }
 
     isProgressOnlyUpdate(prev, state) {

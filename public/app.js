@@ -20,6 +20,9 @@ const globalMaxStorageMb = document.getElementById('global-max-storage-mb');
 const storageLimitSuccess = document.getElementById('storage-limit-success');
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
+const folderInput = document.getElementById('folder-input');
+const folderPickBtn = document.getElementById('folder-pick-btn');
+const zipUploadModal = document.getElementById('zip-upload-modal');
 const shareForm = document.getElementById('share-form');
 const shareFileLabel = document.getElementById('share-file-label');
 const shortNameInput = document.getElementById('short-name');
@@ -404,6 +407,24 @@ function resetCreateState() {
 
 let uploadPanel;
 
+const zipUploadFlow = typeof ZipUploadFlow !== 'undefined'
+  ? new ZipUploadFlow({
+    modal: zipUploadModal,
+    title: document.getElementById('zip-upload-title'),
+    summary: document.getElementById('zip-upload-summary'),
+    progress: document.getElementById('zip-upload-progress'),
+    progressText: document.getElementById('zip-upload-progress-text'),
+    folderNameField: document.getElementById('zip-upload-folder-name-field'),
+    folderNameInput: document.getElementById('zip-upload-folder-name'),
+    volumeInput: document.getElementById('zip-upload-volume-mb'),
+    passwordInput: document.getElementById('zip-upload-password'),
+    error: document.getElementById('zip-upload-error'),
+    cancelBtn: document.getElementById('zip-upload-cancel-btn'),
+    rawBtn: document.getElementById('zip-upload-raw-btn'),
+    zipBtn: document.getElementById('zip-upload-confirm-btn'),
+  })
+  : null;
+
 const uploadQueue = new UploadQueue({
   apiPrefix: '/api/upload',
   fetchFn: (path, opts) => fetch(path, { credentials: 'same-origin', ...opts }),
@@ -419,9 +440,15 @@ uploadPanel = new UploadPanel({
     setMessage(shareError, null);
   },
   onError: (message) => setMessage(shareError, message, 'error'),
+  onBeforeUpload: async (files, mode) => {
+    if (!zipUploadFlow) return { files };
+    return zipUploadFlow.decide(files, mode);
+  },
   elements: {
     dropZone,
     fileInput,
+    folderInput,
+    folderPickBtn,
     queueEl: uploadQueueEl,
     queueList: uploadQueueList,
     queueHint: uploadQueueResumeHint,
