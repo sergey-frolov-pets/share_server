@@ -145,6 +145,24 @@ button[type="submit"]:disabled {
   margin: 0;
 }
 
+.drop-zone-wrap {
+  display: grid;
+  gap: 10px;
+}
+
+.drop-zone-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.drop-zone-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
 .hint {
   color: var(--muted);
   font-size: 0.875rem;
@@ -1141,4 +1159,88 @@ button[type="submit"]:disabled {
   margin-top: 0;
   padding: 6px 8px;
   font-size: 0.8rem;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal-panel {
+  position: relative;
+  width: min(100%, 420px);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+}
+
+.modal-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.modal-file-label {
+  margin: 0 0 16px;
+}
+
+.modal-form-label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+}
+
+.modal-form-label input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.modal-actions .primary-btn,
+.modal-actions .btn-secondary {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.modal-actions .btn-secondary {
+  background: var(--card);
+}
+
+.checkbox-label label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  margin-bottom: 12px;
 }

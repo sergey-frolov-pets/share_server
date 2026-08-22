@@ -37,10 +37,16 @@
     </div>
 
     <div id="create-panel">
-      <div id="drop-zone" class="drop-zone">
-        <p>Перетащите файл сюда</p>
-        <p class="hint">или нажмите — один файл за раз</p>
-        <input type="file" id="file-input" hidden>
+      <div class="drop-zone-wrap">
+        <div id="drop-zone" class="drop-zone">
+          <p>Перетащите файл или файлы сюда</p>
+          <p class="hint">или нажмите — один файл, до 3 параллельно</p>
+          <input type="file" id="file-input" hidden multiple>
+        </div>
+        <div class="drop-zone-actions">
+          <button type="button" id="folder-pick-btn" class="btn-secondary drop-zone-btn">Загрузить папку</button>
+          <input type="file" id="folder-input" hidden webkitdirectory multiple>
+        </div>
       </div>
 
       <div id="upload-queue" class="upload-queue hidden">
@@ -328,6 +334,41 @@
   </section>
   </main>
 
+  <div id="zip-upload-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="zip-upload-title">
+    <div class="modal-backdrop" data-zip-upload-close></div>
+    <div class="modal-panel">
+      <h3 id="zip-upload-title" class="modal-title">ZIP-загрузка</h3>
+      <p id="zip-upload-summary" class="hint modal-file-label"></p>
+
+      <label id="zip-upload-folder-name-field" class="modal-form-label hidden">
+        Папка внутри архива
+        <input type="text" id="zip-upload-folder-name" placeholder="my-folder">
+      </label>
+
+      <div class="row">
+        <label class="modal-form-label">
+          Размер тома, МБ
+          <input type="number" id="zip-upload-volume-mb" min="1" placeholder="без разбиения">
+        </label>
+        <label class="modal-form-label">
+          Пароль ZIP
+          <input type="password" id="zip-upload-password" autocomplete="new-password" placeholder="не задан">
+        </label>
+      </div>
+
+      <p id="zip-upload-progress" class="hint hidden">
+        <span id="zip-upload-progress-text"></span>
+      </p>
+      <p id="zip-upload-error" class="error hidden"></p>
+
+      <div class="modal-actions">
+        <button type="button" id="zip-upload-cancel-btn" class="btn-secondary" data-zip-upload-close>Отмена</button>
+        <button type="button" id="zip-upload-raw-btn" class="btn-secondary">Загрузить как есть</button>
+        <button type="button" id="zip-upload-confirm-btn" class="primary-btn">Создать ZIP и загрузить</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/icons.js"></script>
   <script src="/file-handle-store.js"></script>
   <script src="/upload/constants.js"></script>
@@ -336,6 +377,9 @@
   <script src="/chunk-upload.js"></script>
   <script src="/upload-queue.js"></script>
   <script src="/upload-panel.js"></script>
+  <script src="/vendor/zip-no-worker.min.js"></script>
+  <script src="/zip-pack.js"></script>
+  <script src="/zip-upload-flow.js"></script>
   <script src="/download-queue.js"></script>
   <script src="/app.js"></script>
 </body>
