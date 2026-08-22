@@ -3,7 +3,7 @@ const config = require('./config');
 const { isShortNameTaken } = require('./db');
 
 const DEFAULT_LENGTH = 6;
-const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+const CHARSET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const MAX_ATTEMPTS = 50;
 
 const RESERVED = new Set([
@@ -13,11 +13,11 @@ const RESERVED = new Set([
   'account',
 ]);
 
-function generateRandomLetters(length = DEFAULT_LENGTH) {
+function generateRandomShortName(length = DEFAULT_LENGTH) {
   const bytes = crypto.randomBytes(length);
   let result = '';
   for (let i = 0; i < length; i += 1) {
-    result += LETTERS[bytes[i] % LETTERS.length];
+    result += CHARSET[bytes[i] % CHARSET.length];
   }
   return result;
 }
@@ -28,7 +28,7 @@ function isReservedShortName(name) {
 
 function findAvailableRandomShortName(length = DEFAULT_LENGTH) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-    const name = generateRandomLetters(length);
+    const name = generateRandomShortName(length);
     if (isReservedShortName(name)) continue;
     if (!isShortNameTaken(name)) {
       return name;

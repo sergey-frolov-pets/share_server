@@ -925,6 +925,21 @@ button[type="submit"]:disabled {
   min-width: 140px;
 }
 
+.admin-file-delete-cell {
+  min-width: 120px;
+}
+
+.admin-file-delete-days,
+.admin-file-delete-at {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 0;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
 .admin-access-label {
   display: block;
   margin: 0 0 2px;
@@ -1161,6 +1176,39 @@ button[type="submit"]:disabled {
   font-size: 0.8rem;
 }
 
+.admin-file-name-cell {
+  min-width: 180px;
+}
+
+.admin-file-display-name {
+  display: block;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.admin-file-field {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.admin-file-field:last-child {
+  margin-bottom: 0;
+}
+
+.admin-field-label {
+  font-size: 0.7rem;
+}
+
+.admin-field-value {
+  font-size: 0.875rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -1199,13 +1247,16 @@ button[type="submit"]:disabled {
   margin: 0 0 16px;
 }
 
-.modal-form-label {
+.modal-form-label,
+.modal-form label {
   display: block;
   margin-bottom: 12px;
   font-size: 0.875rem;
 }
 
-.modal-form-label input {
+.modal-form-label input,
+.modal-form input,
+.modal-form textarea {
   width: 100%;
   margin-top: 4px;
   padding: 8px 10px;

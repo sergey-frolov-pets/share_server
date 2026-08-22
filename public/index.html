@@ -69,7 +69,7 @@
       <p id="share-file-label" class="share-file-label hint hidden"></p>
       <label>
         Короткое имя (часть ссылки)
-        <input type="text" id="short-name" placeholder="6 букв — автоматически" pattern="[A-Za-z0-9_-]+" required>
+        <input type="text" id="short-name" placeholder="6 символов — автоматически" pattern="[A-Za-z0-9_-]+" required>
         <span id="name-preview" class="hint"></span>
         <span id="name-error" class="error hidden"></span>
       </label>
@@ -301,6 +301,7 @@
                 <th>Файл</th>
                 <th>Размер</th>
                 <th>Скачиваний</th>
+                <th>Удаление</th>
                 <th>Ссылки</th>
                 <th>Действия</th>
               </tr>
@@ -366,6 +367,97 @@
         <button type="button" id="zip-upload-raw-btn" class="btn-secondary">Загрузить как есть</button>
         <button type="button" id="zip-upload-confirm-btn" class="primary-btn">Создать ZIP и загрузить</button>
       </div>
+    </div>
+  </div>
+
+  <div id="admin-edit-file-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="admin-edit-file-title">
+    <div class="modal-backdrop" data-admin-edit-file-close></div>
+    <div class="modal-panel">
+      <h3 id="admin-edit-file-title" class="modal-title">Редактировать файл</h3>
+      <p id="admin-edit-file-meta" class="hint modal-file-label"></p>
+      <form id="admin-edit-file-form" class="modal-form">
+        <label>
+          Имя файла
+          <input type="text" id="admin-edit-file-name" required>
+        </label>
+
+        <label>
+          Макс. скачиваний файла
+          <input type="number" id="admin-edit-file-max-downloads" min="1" placeholder="без лимита">
+        </label>
+
+        <fieldset class="fieldset">
+          <legend>Удаление с сервера</legend>
+          <div class="row">
+            <label>
+              Через, дней
+              <input type="number" id="admin-edit-file-delete-days" min="0" step="1" placeholder="без срока">
+            </label>
+            <label>
+              До даты
+              <input type="date" id="admin-edit-file-delete-at">
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" data-admin-edit-file-close>Отмена</button>
+          <button type="submit" id="admin-edit-file-submit" class="primary-btn">Сохранить</button>
+        </div>
+        <p id="admin-edit-file-error" class="error hidden"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="admin-create-link-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="admin-create-link-title">
+    <div class="modal-backdrop" data-admin-create-link-close></div>
+    <div class="modal-panel">
+      <h3 id="admin-create-link-title" class="modal-title">Создать ссылку</h3>
+      <p id="admin-create-link-file-label" class="hint modal-file-label"></p>
+      <form id="admin-create-link-form" class="modal-form">
+        <label>
+          Короткое имя (часть ссылки)
+          <input type="text" id="admin-create-link-short-name" pattern="[A-Za-z0-9_-]+" required>
+          <span id="admin-create-link-name-preview" class="hint"></span>
+        </label>
+
+        <fieldset class="fieldset">
+          <legend>Ссылка — когда перестаёт скачиваться</legend>
+          <div class="row">
+            <label>
+              Макс. скачиваний
+              <input type="number" id="admin-create-link-max-downloads" min="1" placeholder="без лимита">
+            </label>
+            <label>
+              Срок, дней
+              <input type="number" id="admin-create-link-days" min="1" placeholder="без срока">
+            </label>
+          </div>
+        </fieldset>
+
+        <label>
+          Пароль для скачивания (опционально)
+          <input type="password" id="admin-create-link-password" autocomplete="new-password" placeholder="не задан">
+        </label>
+
+        <label id="admin-create-link-emails-label">
+          Доступ: email
+          <span id="admin-create-link-emails-hint" class="hint hidden"></span>
+          <textarea id="admin-create-link-emails" rows="2" placeholder="user@example.com" disabled></textarea>
+        </label>
+
+        <label id="admin-create-link-domains-label">
+          Доступ: домены
+          <span id="admin-create-link-domains-hint" class="hint hidden"></span>
+          <textarea id="admin-create-link-domains" rows="2" placeholder="vk.ru" disabled></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" data-admin-create-link-close>Отмена</button>
+          <button type="submit" id="admin-create-link-submit" class="primary-btn">Создать ссылку</button>
+        </div>
+        <p id="admin-create-link-error" class="error hidden"></p>
+      </form>
     </div>
   </div>
 

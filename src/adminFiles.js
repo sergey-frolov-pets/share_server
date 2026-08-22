@@ -2,7 +2,16 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { removeStorageFromDisk, storageExists, sendStoredFile } = require('./chunkStorage');
-const { isLinkAvailable, isStoredFileAvailable, parseRemainingDownloads, parseExpiresDateInput } = require('./limits');
+const {
+  isLinkAvailable,
+  isStoredFileAvailable,
+  parseRemainingDownloads,
+  parseExpiresDateInput,
+  parseFileDeleteDeadline,
+  parseOptionalPositiveInt,
+  parseLimitFields,
+} = require('./limits');
+const { hashSecret } = require('./password');
 const {
   parseAccessList,
   parseAccessInput,
@@ -16,6 +25,7 @@ const {
   getLinksForStoredFile,
   getStoredFileById,
   updateStoredFileRename,
+  updateStoredFileLimits,
   updateLinkById,
   touchLinksUpdatedAt,
   deleteLinksForStoredFile,
@@ -46,6 +56,16 @@ function validateOriginalName(name) {
     return 'Имя файла не может содержать / или \\';
   }
   return null;
+}
+
+function parseDownloadPassword(downloadPassword) {
+  if (!downloadPassword || !String(downloadPassword).trim()) {
+    return { hash: null };
+  }
+  if (String(downloadPassword).length < 4) {
+    return { error: 'Пароль для скачивания — минимум 4 символа' };
+  }
+  return { hash: hashSecret(String(downloadPassword).trim()) };
 }
 
 function validateShortName(shortName) {
@@ -177,6 +197,39 @@ function handleAdminFileRename(req, res) {
     touchLinksUpdatedAt(fileId);
   }
 
+  const shouldUpdateLimits = body.fileDeleteAt !== undefined
+    || body.fileDays !== undefined
+    || body.fileMaxDownloads !== undefined;
+
+  if (shouldUpdateLimits) {
+    let deleteAt = file.delete_at;
+    if (body.fileDeleteAt !== undefined || body.fileDays !== undefined) {
+      const deleteParsed = parseFileDeleteDeadline(body);
+      if (deleteParsed.error) {
+        res.status(400).json({ error: deleteParsed.error });
+        return;
+      }
+      deleteAt = deleteParsed.value;
+    }
+
+    let deleteMaxDownloads = file.delete_max_downloads;
+    if (body.fileMaxDownloads !== undefined) {
+      const maxParsed = parseOptionalPositiveInt(body.fileMaxDownloads, 'Лимит скачиваний файла');
+      if (maxParsed.error) {
+        res.status(400).json({ error: maxParsed.error });
+        return;
+      }
+      deleteMaxDownloads = maxParsed.value;
+    }
+
+    updateStoredFileLimits(fileId, {
+      deleteMaxDownloads,
+      deleteAt,
+      description: file.description || null,
+    });
+    touchLinksUpdatedAt(fileId);
+  }
+
   const refreshed = mapFileRow(getStoredFileById(fileId));
   res.json({
     ok: true,
@@ -221,14 +274,36 @@ function handleAdminLinkCreate(req, res) {
     }
   }
 
+  const linkLimits = parseLimitFields(body, 'link');
+  if (linkLimits.error) {
+    res.status(400).json({ error: linkLimits.error });
+    return;
+  }
+
+  const passwordParsed = parseDownloadPassword(body.downloadPassword);
+  if (passwordParsed.error) {
+    res.status(400).json({ error: passwordParsed.error });
+    return;
+  }
+
+  const access = {
+    emails: parseAccessInput(body.allowedEmails || ''),
+    domains: parseDomainInput(body.allowedDomains || ''),
+  };
+  const smtpError = validateAccessRestrictionsSmtp(access, isEmailConfigured());
+  if (smtpError) {
+    res.status(503).json({ error: smtpError });
+    return;
+  }
+
   createLink({
     shortName,
     storedFileId: fileId,
-    linkMaxDownloads: null,
-    linkExpiresAt: null,
-    downloadPasswordHash: null,
-    allowedEmails: '[]',
-    allowedDomains: '[]',
+    linkMaxDownloads: linkLimits.maxDownloads,
+    linkExpiresAt: linkLimits.expiresAt,
+    downloadPasswordHash: passwordParsed.hash,
+    allowedEmails: JSON.stringify(access.emails),
+    allowedDomains: JSON.stringify(access.domains),
     ownerUserId: null,
   });
 
