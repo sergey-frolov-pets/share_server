@@ -83,6 +83,15 @@ const adminFilesPanel = document.getElementById('admin-files-panel');
 const adminLinksPanel = document.getElementById('admin-links-panel');
 const adminAssetsTabFiles = document.getElementById('admin-assets-tab-files');
 const adminAssetsTabLinks = document.getElementById('admin-assets-tab-links');
+const adminEditFileModal = document.getElementById('admin-edit-file-modal');
+const adminEditFileForm = document.getElementById('admin-edit-file-form');
+const adminEditFileMeta = document.getElementById('admin-edit-file-meta');
+const adminEditFileNameInput = document.getElementById('admin-edit-file-name');
+const adminEditFileMaxDownloadsInput = document.getElementById('admin-edit-file-max-downloads');
+const adminEditFileDeleteDaysInput = document.getElementById('admin-edit-file-delete-days');
+const adminEditFileDeleteAtInput = document.getElementById('admin-edit-file-delete-at');
+const adminEditFileSubmitBtn = document.getElementById('admin-edit-file-submit');
+const adminEditFileError = document.getElementById('admin-edit-file-error');
 const adminCreateLinkModal = document.getElementById('admin-create-link-modal');
 const adminCreateLinkForm = document.getElementById('admin-create-link-form');
 const adminCreateLinkFileLabel = document.getElementById('admin-create-link-file-label');
@@ -113,6 +122,8 @@ let nameCheckTimeout = null;
 let editingShortName = null;
 let smtpConfigured = false;
 let adminAssetsCache = [];
+let adminEditFileId = null;
+let adminEditFileDeleteSyncBound = false;
 let adminCreateLinkFileId = null;
 
 const SMTP_ACCESS_UNAVAILABLE_HINT = 'Недоступно без настроенного SMTP на сервере';
@@ -186,6 +197,123 @@ function daysFromExpires(expiresAt) {
   const ms = new Date(expiresAt) - Date.now();
   if (ms <= 0) return '0';
   return String(Math.ceil(ms / (24 * 60 * 60 * 1000)));
+}
+
+function daysUntilDateInput(dateVal) {
+  if (!dateVal) return '';
+  const end = new Date(`${dateVal}T23:59:59`);
+  const ms = end - Date.now();
+  if (ms <= 0) return '0';
+  return String(Math.ceil(ms / (24 * 60 * 60 * 1000)));
+}
+
+function dateFromDaysInput(days) {
+  if (days === '' || days === null || days === undefined) return '';
+  const num = parseInt(days, 10);
+  if (!Number.isFinite(num) || num < 0) return '';
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + num);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatFileDeleteDaysValue(fileDeleteAt) {
+  return daysFromExpires(fileDeleteAt);
+}
+
+function formatFileDeleteDaysDisplay(fileDeleteAt) {
+  if (!fileDeleteAt) return '∞';
+  return formatFileDeleteDaysValue(fileDeleteAt);
+}
+
+function formatFileDeleteDateDisplay(fileDeleteAt) {
+  if (!fileDeleteAt) return '—';
+  return formatCompactDate(fileDeleteAt);
+}
+
+function bindAdminEditFileDeleteSync() {
+  if (adminEditFileDeleteSyncBound) return;
+  adminEditFileDeleteSyncBound = true;
+  let syncing = false;
+
+  adminEditFileDeleteDaysInput.addEventListener('input', () => {
+    if (syncing) return;
+    syncing = true;
+    const days = adminEditFileDeleteDaysInput.value.trim();
+    adminEditFileDeleteAtInput.value = days ? dateFromDaysInput(days) : '';
+    syncing = false;
+  });
+
+  adminEditFileDeleteAtInput.addEventListener('change', () => {
+    if (syncing) return;
+    syncing = true;
+    const dateVal = adminEditFileDeleteAtInput.value;
+    adminEditFileDeleteDaysInput.value = dateVal ? daysUntilDateInput(dateVal) : '';
+    syncing = false;
+  });
+}
+
+function openAdminEditFileModal(fileId) {
+  const file = adminAssetsCache.find((entry) => entry.id === fileId);
+  if (!file) return;
+
+  adminEditFileId = fileId;
+  adminEditFileMeta.textContent = [
+    `Размер: ${file.sizeMb ?? 0} МБ`,
+    `Скачиваний: ${formatDownloadLimit(file.fileDownloadCount || 0, file.fileMaxDownloads)}`,
+    `Создан: ${formatCompactDateTime(file.createdAt)}`,
+  ].join(' · ');
+  adminEditFileNameInput.value = file.originalName;
+  adminEditFileMaxDownloadsInput.value = file.fileMaxDownloads ?? '';
+  adminEditFileDeleteDaysInput.value = formatFileDeleteDaysValue(file.fileDeleteAt);
+  adminEditFileDeleteAtInput.value = toDateInputValue(file.fileDeleteAt);
+  setMessage(adminEditFileError, null);
+  show(adminEditFileModal);
+}
+
+function closeAdminEditFileModal() {
+  hide(adminEditFileModal);
+  adminEditFileId = null;
+  setMessage(adminEditFileError, null);
+}
+
+async function submitAdminEditFileForm(e) {
+  e.preventDefault();
+  if (!adminEditFileId) return;
+
+  setMessage(adminEditFileError, null);
+  adminEditFileSubmitBtn.disabled = true;
+
+  try {
+    const data = await api(`/api/admin/files/${adminEditFileId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        originalName: adminEditFileNameInput.value.trim(),
+        fileMaxDownloads: adminEditFileMaxDownloadsInput.value,
+        fileDays: adminEditFileDeleteDaysInput.value.trim(),
+        fileDeleteAt: adminEditFileDeleteAtInput.value,
+      }),
+    });
+    closeAdminEditFileModal();
+    setMessage(adminFilesMessage, data.warning || 'Файл обновлён', data.warning ? 'error' : 'success');
+    if (data.file) {
+      adminAssetsCache = adminAssetsCache.map((entry) => (
+        entry.id === data.file.id ? data.file : entry
+      ));
+      renderAdminAssetsStats();
+      renderAdminFilesTable();
+      renderAdminLinksTable();
+    } else {
+      await loadAdminFiles();
+    }
+  } catch (err) {
+    setMessage(adminEditFileError, err.message, 'error');
+  } finally {
+    adminEditFileSubmitBtn.disabled = false;
+  }
 }
 
 async function api(path, options = {}) {
@@ -710,26 +838,34 @@ function renderAdminFilesTable() {
   adminFilesBody.innerHTML = adminAssetsCache.map((file) => {
     const linksStat = `${file.linkCount} (активн. ${file.activeLinkCount})`;
     const downloadsStat = formatDownloadLimit(file.fileDownloadCount || 0, file.fileMaxDownloads);
-    const metaParts = [formatCompactDateTime(file.createdAt)];
-    if (file.fileDeleteAt) {
-      metaParts.push(`до ${formatCompactDate(file.fileDeleteAt)}`);
-    }
-    const meta = metaParts.join(' · ');
+    const deleteDaysDisplay = formatFileDeleteDaysDisplay(file.fileDeleteAt);
+    const deleteDateDisplay = formatFileDeleteDateDisplay(file.fileDeleteAt);
+    const meta = `создан ${formatCompactDateTime(file.createdAt)}`;
 
     return `
       <tr data-file-id="${file.id}">
-        <td data-label="Файл">
-          <input type="text" class="admin-file-name" value="${escapeHtml(file.originalName)}">
+        <td data-label="Файл" class="admin-file-name-cell">
+          <span class="admin-file-display-name">${escapeHtml(file.originalName)}</span>
           <span class="hint admin-file-meta">${escapeHtml(meta)}</span>
         </td>
         <td data-label="Размер" class="admin-cell-num">${file.sizeMb ?? 0} МБ</td>
         <td data-label="Скачиваний" class="admin-cell-num">${downloadsStat}</td>
+        <td data-label="Удаление" class="admin-file-delete-cell">
+          <div class="admin-file-field">
+            <span class="admin-field-label hint">Дней</span>
+            <span class="admin-field-value">${escapeHtml(deleteDaysDisplay)}</span>
+          </div>
+          <div class="admin-file-field">
+            <span class="admin-field-label hint">До</span>
+            <span class="admin-field-value">${escapeHtml(deleteDateDisplay)}</span>
+          </div>
+        </td>
         <td data-label="Ссылки" class="admin-cell-num">${linksStat}</td>
         <td data-label="Действия">
           <div class="admin-row-actions icon-actions">
             ${AppIcons.iconButton('link', { className: 'admin-file-add-link', title: 'Добавить ссылку' })}
             ${AppIcons.iconButton('download', { className: 'admin-file-download', title: 'Скачать' })}
-            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: 'Сохранить файл' })}
+            ${AppIcons.iconButton('edit', { className: 'admin-file-edit', title: 'Редактировать файл' })}
             ${AppIcons.iconButton('delete', { className: 'btn-danger admin-file-delete', title: 'Удалить файл' })}
           </div>
         </td>
@@ -737,8 +873,8 @@ function renderAdminFilesTable() {
     `;
   }).join('');
 
-  adminFilesBody.querySelectorAll('.admin-file-save').forEach((btn) => {
-    btn.addEventListener('click', saveAdminFileRow);
+  adminFilesBody.querySelectorAll('.admin-file-edit').forEach((btn) => {
+    btn.addEventListener('click', editAdminFileRow);
   });
   adminFilesBody.querySelectorAll('.admin-file-delete').forEach((btn) => {
     btn.addEventListener('click', deleteAdminFileRow);
@@ -844,35 +980,15 @@ function downloadAdminFileRow(e) {
   if (!file) return;
   enqueueDownload({
     id: fileId,
-    originalName: row.querySelector('.admin-file-name').value.trim() || file.originalName,
+    originalName: file.originalName,
     sizeBytes: file.sizeBytes || Math.round((file.sizeMb || 0) * 1024 * 1024),
   });
 }
 
-async function saveAdminFileRow(e) {
+function editAdminFileRow(e) {
   const row = e.target.closest('tr');
-  const fileId = row.dataset.fileId;
-  const originalName = row.querySelector('.admin-file-name').value.trim();
-
-  try {
-    const data = await api(`/api/admin/files/${fileId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ originalName }),
-    });
-    setMessage(adminFilesMessage, data.warning || 'Файл обновлён', data.warning ? 'error' : 'success');
-    if (data.file) {
-      adminAssetsCache = adminAssetsCache.map((entry) => (
-        entry.id === data.file.id ? data.file : entry
-      ));
-      renderAdminAssetsStats();
-      renderAdminFilesTable();
-      renderAdminLinksTable();
-    } else {
-      await loadAdminFiles();
-    }
-  } catch (err) {
-    setMessage(adminError, err.message, 'error');
-  }
+  const fileId = parseInt(row.dataset.fileId, 10);
+  openAdminEditFileModal(fileId);
 }
 
 function updateAdminCreateLinkNamePreview() {
@@ -1039,8 +1155,9 @@ async function deleteAdminLinkRow(e) {
 
 async function deleteAdminFileRow(e) {
   const row = e.target.closest('tr');
-  const fileId = row.dataset.fileId;
-  const fileName = row.querySelector('.admin-file-name').value.trim();
+  const fileId = parseInt(row.dataset.fileId, 10);
+  const file = adminAssetsCache.find((entry) => entry.id === fileId);
+  const fileName = file?.originalName || 'файл';
 
   try {
     await api(`/api/admin/files/${fileId}`, { method: 'DELETE', body: JSON.stringify({}) });
@@ -1101,12 +1218,20 @@ tabAdmin.addEventListener('click', () => switchTab('admin'));
 adminAssetsTabFiles.addEventListener('click', () => switchAdminAssetsTab('files'));
 adminAssetsTabLinks.addEventListener('click', () => switchAdminAssetsTab('links'));
 
+bindAdminEditFileDeleteSync();
+adminEditFileForm.addEventListener('submit', submitAdminEditFileForm);
+adminEditFileModal.querySelectorAll('[data-admin-edit-file-close]').forEach((btn) => {
+  btn.addEventListener('click', closeAdminEditFileModal);
+});
 adminCreateLinkForm.addEventListener('submit', submitAdminCreateLinkForm);
 adminCreateLinkShortNameInput.addEventListener('input', updateAdminCreateLinkNamePreview);
 adminCreateLinkModal.querySelectorAll('[data-admin-create-link-close]').forEach((btn) => {
   btn.addEventListener('click', closeAdminCreateLinkModal);
 });
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !adminEditFileModal.classList.contains('hidden')) {
+    closeAdminEditFileModal();
+  }
   if (e.key === 'Escape' && !adminCreateLinkModal.classList.contains('hidden')) {
     closeAdminCreateLinkModal();
   }

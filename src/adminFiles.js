@@ -7,6 +7,8 @@ const {
   isStoredFileAvailable,
   parseRemainingDownloads,
   parseExpiresDateInput,
+  parseFileDeleteDeadline,
+  parseOptionalPositiveInt,
   parseLimitFields,
 } = require('./limits');
 const { hashSecret } = require('./password');
@@ -23,6 +25,7 @@ const {
   getLinksForStoredFile,
   getStoredFileById,
   updateStoredFileRename,
+  updateStoredFileLimits,
   updateLinkById,
   touchLinksUpdatedAt,
   deleteLinksForStoredFile,
@@ -191,6 +194,39 @@ function handleAdminFileRename(req, res) {
     }
     storedPath = nextPath;
     updateStoredFileRename(fileId, newOriginalName, storedPath);
+    touchLinksUpdatedAt(fileId);
+  }
+
+  const shouldUpdateLimits = body.fileDeleteAt !== undefined
+    || body.fileDays !== undefined
+    || body.fileMaxDownloads !== undefined;
+
+  if (shouldUpdateLimits) {
+    let deleteAt = file.delete_at;
+    if (body.fileDeleteAt !== undefined || body.fileDays !== undefined) {
+      const deleteParsed = parseFileDeleteDeadline(body);
+      if (deleteParsed.error) {
+        res.status(400).json({ error: deleteParsed.error });
+        return;
+      }
+      deleteAt = deleteParsed.value;
+    }
+
+    let deleteMaxDownloads = file.delete_max_downloads;
+    if (body.fileMaxDownloads !== undefined) {
+      const maxParsed = parseOptionalPositiveInt(body.fileMaxDownloads, 'Лимит скачиваний файла');
+      if (maxParsed.error) {
+        res.status(400).json({ error: maxParsed.error });
+        return;
+      }
+      deleteMaxDownloads = maxParsed.value;
+    }
+
+    updateStoredFileLimits(fileId, {
+      deleteMaxDownloads,
+      deleteAt,
+      description: file.description || null,
+    });
     touchLinksUpdatedAt(fileId);
   }
 

@@ -33,9 +33,37 @@ function parseExpiresDateInput(value) {
   const trimmed = String(value).trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
   if (!match) {
-    return { error: 'Некорректная дата срока ссылки' };
+    return { error: 'Некорректная дата срока' };
   }
   return { value: `${match[1]}-${match[2]}-${match[3]} 23:59:59` };
+}
+
+function parseOptionalNonNegativeInt(value, fieldName) {
+  if (value === null || value === undefined || value === '') {
+    return { value: null };
+  }
+  const num = parseInt(value, 10);
+  if (!Number.isFinite(num) || num < 0) {
+    return { error: `${fieldName}: целое число ≥ 0 или пусто` };
+  }
+  return { value: num };
+}
+
+function parseFileDeleteDeadline(body) {
+  const dateRaw = body.fileDeleteAt;
+  const daysRaw = body.fileDays;
+  const dateEmpty = dateRaw === null || dateRaw === undefined || String(dateRaw).trim() === '';
+  const daysEmpty = daysRaw === null || daysRaw === undefined || String(daysRaw).trim() === '';
+
+  if (dateEmpty && daysEmpty) {
+    return { value: null };
+  }
+  if (!dateEmpty) {
+    return parseExpiresDateInput(dateRaw);
+  }
+  const daysParsed = parseOptionalNonNegativeInt(daysRaw, 'Срок хранения файла');
+  if (daysParsed.error) return { error: daysParsed.error };
+  return { value: daysParsed.value === null ? null : daysToDatetime(daysParsed.value) };
 }
 
 function parseLimitFields(body, prefix) {
@@ -98,9 +126,11 @@ function isStoredFileAvailable(row) {
 
 module.exports = {
   parseOptionalPositiveInt,
+  parseOptionalNonNegativeInt,
   daysToDatetime,
   parseRemainingDownloads,
   parseExpiresDateInput,
+  parseFileDeleteDeadline,
   parseLimitFields,
   isLinkAvailable,
   isLinkExhausted,
