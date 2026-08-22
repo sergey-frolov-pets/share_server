@@ -1153,11 +1153,30 @@ button[type="submit"]:disabled {
 }
 
 @media (max-width: 720px) {
-  .admin-assets-table thead {
+  .container.container--wide {
+    margin: 4px 0;
+    padding: 0 6px;
+  }
+
+  .card.card--wide {
+    padding: 8px 6px;
+  }
+
+  #admin-panel .data-table {
+    display: block;
+    table-layout: auto;
+    width: 100%;
+  }
+
+  #admin-panel .data-table thead {
     display: none;
   }
 
-  .admin-assets-table tbody tr {
+  #admin-panel .data-table tbody {
+    display: block;
+  }
+
+  #admin-panel .data-table tbody tr {
     display: block;
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -1166,16 +1185,19 @@ button[type="submit"]:disabled {
     background: #fff;
   }
 
-  .admin-assets-table tbody td {
+  #admin-panel .data-table tbody td {
     display: grid;
-    grid-template-columns: minmax(84px, 32%) 1fr;
+    grid-template-columns: minmax(88px, 34%) 1fr;
     gap: 4px 10px;
-    align-items: center;
+    align-items: start;
+    width: 100% !important;
+    max-width: none !important;
     border-bottom: none;
     padding: 5px 0;
+    box-sizing: border-box;
   }
 
-  .admin-assets-table tbody td::before {
+  #admin-panel .data-table tbody td::before {
     content: attr(data-label);
     font-size: 0.7rem;
     color: var(--muted);
@@ -1183,22 +1205,57 @@ button[type="submit"]:disabled {
     line-height: 1.3;
   }
 
-  .admin-assets-table tbody td[data-label="Действия"] {
+  #admin-panel .data-table tbody td[data-label="Действия"] {
     grid-template-columns: 1fr;
     padding-top: 8px;
   }
 
-  .admin-assets-table tbody td[data-label="Действия"]::before {
+  #admin-panel .data-table tbody td[data-label="Действия"]::before {
     margin-bottom: 2px;
   }
 
-  .admin-assets-table tbody td.admin-assets-empty {
+  #admin-panel .data-table tbody td.admin-assets-empty {
     display: block;
     grid-template-columns: none;
   }
 
-  .admin-assets-table tbody td.admin-assets-empty::before {
+  #admin-panel .data-table tbody td.admin-assets-empty::before {
     content: none;
+  }
+
+  #admin-panel .data-table tbody td.admin-file-name-cell {
+    display: block;
+  }
+
+  #admin-panel .data-table tbody td.admin-file-name-cell::before {
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  #admin-panel .data-table tbody td.admin-file-name-cell .admin-file-display-name,
+  #admin-panel .data-table tbody td.admin-file-name-cell .admin-file-meta {
+    display: block;
+  }
+
+  #admin-panel .data-table tbody td[data-label="Лимиты"] {
+    grid-template-columns: 1fr;
+  }
+
+  #admin-panel .data-table tbody td[data-label="Лимиты"]::before {
+    margin-bottom: 4px;
+  }
+
+  #admin-panel .data-table tbody td[data-label="Ссылка"] {
+    display: block;
+  }
+
+  #admin-panel .data-table tbody td[data-label="Ссылка"]::before {
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  #admin-panel .admin-row-actions {
+    flex-wrap: wrap;
   }
 
   .admin-file-name,

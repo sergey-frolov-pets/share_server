@@ -673,17 +673,17 @@ async function loadAdminPanel() {
     const { users } = await api('/api/admin/users');
     adminUsersBody.innerHTML = users.map((u) => `
       <tr data-user-id="${u.id}">
-        <td>${u.email}</td>
-        <td>${u.fileCount}</td>
-        <td>${u.linkCount}</td>
-        <td>${u.storageMb ?? 0}</td>
-        <td>
+        <td data-label="Email">${u.email}</td>
+        <td data-label="Файлы">${u.fileCount}</td>
+        <td data-label="Ссылки">${u.linkCount}</td>
+        <td data-label="Объём">${u.storageMb ?? 0}</td>
+        <td data-label="Загрузка">
           <label class="checkbox-label">
             <input type="checkbox" class="user-can-upload" ${u.canUpload ? 'checked' : ''}>
             Разрешить
           </label>
         </td>
-        <td>
+        <td data-label="Лимиты">
           <div class="user-limits">
             <input type="number" class="user-max-file" min="1" placeholder="МБ файл" value="${u.maxFileSizeMb ?? ''}">
             <input type="number" class="user-max-total" min="1" placeholder="МБ всего" value="${u.maxTotalSizeMb ?? ''}">
@@ -691,7 +691,7 @@ async function loadAdminPanel() {
             <input type="number" class="user-valid-days" min="1" placeholder="дней" value="">
           </div>
         </td>
-        <td><button type="button" class="btn-icon user-save" data-icon="save" title="Сохранить" aria-label="Сохранить"></button></td>
+        <td data-label="Действия"><button type="button" class="btn-icon user-save" data-icon="save" title="Сохранить" aria-label="Сохранить"></button></td>
       </tr>
     `).join('');
 
