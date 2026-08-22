@@ -329,6 +329,45 @@
   </section>
   </main>
 
+  <div id="admin-edit-file-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="admin-edit-file-title">
+    <div class="modal-backdrop" data-admin-edit-file-close></div>
+    <div class="modal-panel">
+      <h3 id="admin-edit-file-title" class="modal-title">Редактировать файл</h3>
+      <p id="admin-edit-file-meta" class="hint modal-file-label"></p>
+      <form id="admin-edit-file-form" class="modal-form">
+        <label>
+          Имя файла
+          <input type="text" id="admin-edit-file-name" required>
+        </label>
+
+        <label>
+          Макс. скачиваний файла
+          <input type="number" id="admin-edit-file-max-downloads" min="1" placeholder="без лимита">
+        </label>
+
+        <fieldset class="fieldset">
+          <legend>Удаление с сервера</legend>
+          <div class="row">
+            <label>
+              Через, дней
+              <input type="number" id="admin-edit-file-delete-days" min="0" step="1" placeholder="без срока">
+            </label>
+            <label>
+              До даты
+              <input type="date" id="admin-edit-file-delete-at">
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" data-admin-edit-file-close>Отмена</button>
+          <button type="submit" id="admin-edit-file-submit" class="primary-btn">Сохранить</button>
+        </div>
+        <p id="admin-edit-file-error" class="error hidden"></p>
+      </form>
+    </div>
+  </div>
+
   <script src="/icons.js"></script>
   <script src="/file-handle-store.js"></script>
   <script src="/upload/constants.js"></script>

@@ -8,6 +8,7 @@ const {
   parseRemainingDownloads,
   parseExpiresDateInput,
   parseFileDeleteDeadline,
+  parseOptionalPositiveInt,
 } = require('./limits');
 const {
   parseAccessList,
@@ -184,15 +185,34 @@ function handleAdminFileRename(req, res) {
     touchLinksUpdatedAt(fileId);
   }
 
-  if (body.fileDeleteAt !== undefined || body.fileDays !== undefined) {
-    const deleteParsed = parseFileDeleteDeadline(body);
-    if (deleteParsed.error) {
-      res.status(400).json({ error: deleteParsed.error });
-      return;
+  const shouldUpdateLimits = body.fileDeleteAt !== undefined
+    || body.fileDays !== undefined
+    || body.fileMaxDownloads !== undefined;
+
+  if (shouldUpdateLimits) {
+    let deleteAt = file.delete_at;
+    if (body.fileDeleteAt !== undefined || body.fileDays !== undefined) {
+      const deleteParsed = parseFileDeleteDeadline(body);
+      if (deleteParsed.error) {
+        res.status(400).json({ error: deleteParsed.error });
+        return;
+      }
+      deleteAt = deleteParsed.value;
     }
+
+    let deleteMaxDownloads = file.delete_max_downloads;
+    if (body.fileMaxDownloads !== undefined) {
+      const maxParsed = parseOptionalPositiveInt(body.fileMaxDownloads, 'Лимит скачиваний файла');
+      if (maxParsed.error) {
+        res.status(400).json({ error: maxParsed.error });
+        return;
+      }
+      deleteMaxDownloads = maxParsed.value;
+    }
+
     updateStoredFileLimits(fileId, {
-      deleteMaxDownloads: file.delete_max_downloads,
-      deleteAt: deleteParsed.value,
+      deleteMaxDownloads,
+      deleteAt,
       description: file.description || null,
     });
     touchLinksUpdatedAt(fileId);
