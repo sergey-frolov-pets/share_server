@@ -162,6 +162,85 @@ function daysFromExpires(expiresAt) {
   return String(Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }
 
+function daysUntilDateInput(dateVal) {
+  if (!dateVal) return '';
+  const end = new Date(`${dateVal}T23:59:59`);
+  const ms = end - Date.now();
+  if (ms <= 0) return '0';
+  return String(Math.ceil(ms / (24 * 60 * 60 * 1000)));
+}
+
+function dateFromDaysInput(days) {
+  if (days === '' || days === null || days === undefined) return '';
+  const num = parseInt(days, 10);
+  if (!Number.isFinite(num) || num < 0) return '';
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + num);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatFileDeleteDaysValue(fileDeleteAt) {
+  return daysFromExpires(fileDeleteAt);
+}
+
+function getFileRowSnapshot(row) {
+  return {
+    originalName: row.querySelector('.admin-file-name').value.trim(),
+    deleteDays: row.querySelector('.admin-file-delete-days').value.trim(),
+    deleteAt: row.querySelector('.admin-file-delete-at').value,
+  };
+}
+
+function bindFileDeleteFieldSync(row, onChange) {
+  const dateInput = row.querySelector('.admin-file-delete-at');
+  const daysInput = row.querySelector('.admin-file-delete-days');
+  let syncing = false;
+
+  const notify = () => {
+    if (onChange) onChange();
+  };
+
+  daysInput.addEventListener('input', () => {
+    if (syncing) return;
+    syncing = true;
+    const days = daysInput.value.trim();
+    dateInput.value = days ? dateFromDaysInput(days) : '';
+    syncing = false;
+    notify();
+  });
+
+  dateInput.addEventListener('change', () => {
+    if (syncing) return;
+    syncing = true;
+    const dateVal = dateInput.value;
+    daysInput.value = dateVal ? daysUntilDateInput(dateVal) : '';
+    syncing = false;
+    notify();
+  });
+}
+
+function bindFileRowChangeDetection(row, baseline) {
+  const saveBtn = row.querySelector('.admin-file-save');
+  const inputs = row.querySelectorAll('.admin-file-name, .admin-file-delete-days, .admin-file-delete-at');
+  const check = () => {
+    const current = getFileRowSnapshot(row);
+    const changed = current.originalName !== baseline.originalName
+      || current.deleteDays !== baseline.deleteDays
+      || current.deleteAt !== baseline.deleteAt;
+    saveBtn.disabled = !changed;
+  };
+  inputs.forEach((input) => {
+    input.addEventListener('input', check);
+    input.addEventListener('change', check);
+  });
+  bindFileDeleteFieldSync(row, check);
+  check();
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'same-origin',
@@ -684,11 +763,9 @@ function renderAdminFilesTable() {
   adminFilesBody.innerHTML = adminAssetsCache.map((file) => {
     const linksStat = `${file.linkCount} (активн. ${file.activeLinkCount})`;
     const downloadsStat = formatDownloadLimit(file.fileDownloadCount || 0, file.fileMaxDownloads);
-    const metaParts = [formatCompactDateTime(file.createdAt)];
-    if (file.fileDeleteAt) {
-      metaParts.push(`до ${formatCompactDate(file.fileDeleteAt)}`);
-    }
-    const meta = metaParts.join(' · ');
+    const deleteAtValue = toDateInputValue(file.fileDeleteAt);
+    const deleteDaysValue = formatFileDeleteDaysValue(file.fileDeleteAt);
+    const meta = `создан ${formatCompactDateTime(file.createdAt)}`;
 
     return `
       <tr data-file-id="${file.id}">
@@ -698,18 +775,36 @@ function renderAdminFilesTable() {
         </td>
         <td data-label="Размер" class="admin-cell-num">${file.sizeMb ?? 0} МБ</td>
         <td data-label="Скачиваний" class="admin-cell-num">${downloadsStat}</td>
+        <td data-label="Удаление" class="admin-file-delete-cell">
+          <label class="admin-access-label hint">Дней</label>
+          <input type="number" class="admin-file-delete-days" min="0" step="1" placeholder="∞" value="${escapeHtml(deleteDaysValue)}">
+          <label class="admin-access-label hint">До</label>
+          <input type="date" class="admin-file-delete-at" value="${escapeHtml(deleteAtValue)}">
+        </td>
         <td data-label="Ссылки" class="admin-cell-num">${linksStat}</td>
         <td data-label="Действия">
           <div class="admin-row-actions icon-actions">
             ${AppIcons.iconButton('link', { className: 'admin-file-add-link', title: 'Добавить ссылку' })}
             ${AppIcons.iconButton('download', { className: 'admin-file-download', title: 'Скачать' })}
-            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: 'Сохранить файл' })}
+            ${AppIcons.iconButton('save', { className: 'admin-file-save', title: 'Сохранить файл', attrs: 'disabled' })}
             ${AppIcons.iconButton('delete', { className: 'btn-danger admin-file-delete', title: 'Удалить файл' })}
           </div>
         </td>
       </tr>
     `;
   }).join('');
+
+  adminFilesBody.querySelectorAll('tr[data-file-id]').forEach((row) => {
+    const fileId = parseInt(row.dataset.fileId, 10);
+    const file = adminAssetsCache.find((entry) => entry.id === fileId);
+    if (file) {
+      bindFileRowChangeDetection(row, {
+        originalName: file.originalName,
+        deleteDays: formatFileDeleteDaysValue(file.fileDeleteAt),
+        deleteAt: toDateInputValue(file.fileDeleteAt),
+      });
+    }
+  });
 
   adminFilesBody.querySelectorAll('.admin-file-save').forEach((btn) => {
     btn.addEventListener('click', saveAdminFileRow);
@@ -826,12 +921,16 @@ function downloadAdminFileRow(e) {
 async function saveAdminFileRow(e) {
   const row = e.target.closest('tr');
   const fileId = row.dataset.fileId;
-  const originalName = row.querySelector('.admin-file-name').value.trim();
+  const snapshot = getFileRowSnapshot(row);
 
   try {
     const data = await api(`/api/admin/files/${fileId}`, {
       method: 'PUT',
-      body: JSON.stringify({ originalName }),
+      body: JSON.stringify({
+        originalName: snapshot.originalName,
+        fileDays: snapshot.deleteDays,
+        fileDeleteAt: snapshot.deleteAt,
+      }),
     });
     setMessage(adminFilesMessage, data.warning || 'Файл обновлён', data.warning ? 'error' : 'success');
     if (data.file) {

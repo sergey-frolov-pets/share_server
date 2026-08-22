@@ -907,6 +907,21 @@ button[type="submit"]:disabled {
   min-width: 140px;
 }
 
+.admin-file-delete-cell {
+  min-width: 120px;
+}
+
+.admin-file-delete-days,
+.admin-file-delete-at {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 0;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+}
+
 .admin-access-label {
   display: block;
   margin: 0 0 2px;

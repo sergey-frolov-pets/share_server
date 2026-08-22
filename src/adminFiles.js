@@ -2,7 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { removeStorageFromDisk, storageExists, sendStoredFile } = require('./chunkStorage');
-const { isLinkAvailable, isStoredFileAvailable, parseRemainingDownloads, parseExpiresDateInput } = require('./limits');
+const {
+  isLinkAvailable,
+  isStoredFileAvailable,
+  parseRemainingDownloads,
+  parseExpiresDateInput,
+  parseFileDeleteDeadline,
+} = require('./limits');
 const {
   parseAccessList,
   parseAccessInput,
@@ -16,6 +22,7 @@ const {
   getLinksForStoredFile,
   getStoredFileById,
   updateStoredFileRename,
+  updateStoredFileLimits,
   updateLinkById,
   touchLinksUpdatedAt,
   deleteLinksForStoredFile,
@@ -174,6 +181,20 @@ function handleAdminFileRename(req, res) {
     }
     storedPath = nextPath;
     updateStoredFileRename(fileId, newOriginalName, storedPath);
+    touchLinksUpdatedAt(fileId);
+  }
+
+  if (body.fileDeleteAt !== undefined || body.fileDays !== undefined) {
+    const deleteParsed = parseFileDeleteDeadline(body);
+    if (deleteParsed.error) {
+      res.status(400).json({ error: deleteParsed.error });
+      return;
+    }
+    updateStoredFileLimits(fileId, {
+      deleteMaxDownloads: file.delete_max_downloads,
+      deleteAt: deleteParsed.value,
+      description: file.description || null,
+    });
     touchLinksUpdatedAt(fileId);
   }
 
