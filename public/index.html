@@ -368,6 +368,58 @@
     </div>
   </div>
 
+  <div id="admin-create-link-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="admin-create-link-title">
+    <div class="modal-backdrop" data-admin-create-link-close></div>
+    <div class="modal-panel">
+      <h3 id="admin-create-link-title" class="modal-title">Создать ссылку</h3>
+      <p id="admin-create-link-file-label" class="hint modal-file-label"></p>
+      <form id="admin-create-link-form" class="modal-form">
+        <label>
+          Короткое имя (часть ссылки)
+          <input type="text" id="admin-create-link-short-name" pattern="[A-Za-z0-9_-]+" required>
+          <span id="admin-create-link-name-preview" class="hint"></span>
+        </label>
+
+        <fieldset class="fieldset">
+          <legend>Ссылка — когда перестаёт скачиваться</legend>
+          <div class="row">
+            <label>
+              Макс. скачиваний
+              <input type="number" id="admin-create-link-max-downloads" min="1" placeholder="без лимита">
+            </label>
+            <label>
+              Срок, дней
+              <input type="number" id="admin-create-link-days" min="1" placeholder="без срока">
+            </label>
+          </div>
+        </fieldset>
+
+        <label>
+          Пароль для скачивания (опционально)
+          <input type="password" id="admin-create-link-password" autocomplete="new-password" placeholder="не задан">
+        </label>
+
+        <label id="admin-create-link-emails-label">
+          Доступ: email
+          <span id="admin-create-link-emails-hint" class="hint hidden"></span>
+          <textarea id="admin-create-link-emails" rows="2" placeholder="user@example.com" disabled></textarea>
+        </label>
+
+        <label id="admin-create-link-domains-label">
+          Доступ: домены
+          <span id="admin-create-link-domains-hint" class="hint hidden"></span>
+          <textarea id="admin-create-link-domains" rows="2" placeholder="vk.ru" disabled></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" data-admin-create-link-close>Отмена</button>
+          <button type="submit" id="admin-create-link-submit" class="primary-btn">Создать ссылку</button>
+        </div>
+        <p id="admin-create-link-error" class="error hidden"></p>
+      </form>
+    </div>
+  </div>
+
   <script src="/icons.js"></script>
   <script src="/file-handle-store.js"></script>
   <script src="/upload/constants.js"></script>

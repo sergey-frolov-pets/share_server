@@ -9,7 +9,9 @@ const {
   parseExpiresDateInput,
   parseFileDeleteDeadline,
   parseOptionalPositiveInt,
+  parseLimitFields,
 } = require('./limits');
+const { hashSecret } = require('./password');
 const {
   parseAccessList,
   parseAccessInput,
@@ -54,6 +56,16 @@ function validateOriginalName(name) {
     return 'Имя файла не может содержать / или \\';
   }
   return null;
+}
+
+function parseDownloadPassword(downloadPassword) {
+  if (!downloadPassword || !String(downloadPassword).trim()) {
+    return { hash: null };
+  }
+  if (String(downloadPassword).length < 4) {
+    return { error: 'Пароль для скачивания — минимум 4 символа' };
+  }
+  return { hash: hashSecret(String(downloadPassword).trim()) };
 }
 
 function validateShortName(shortName) {
@@ -262,14 +274,36 @@ function handleAdminLinkCreate(req, res) {
     }
   }
 
+  const linkLimits = parseLimitFields(body, 'link');
+  if (linkLimits.error) {
+    res.status(400).json({ error: linkLimits.error });
+    return;
+  }
+
+  const passwordParsed = parseDownloadPassword(body.downloadPassword);
+  if (passwordParsed.error) {
+    res.status(400).json({ error: passwordParsed.error });
+    return;
+  }
+
+  const access = {
+    emails: parseAccessInput(body.allowedEmails || ''),
+    domains: parseDomainInput(body.allowedDomains || ''),
+  };
+  const smtpError = validateAccessRestrictionsSmtp(access, isEmailConfigured());
+  if (smtpError) {
+    res.status(503).json({ error: smtpError });
+    return;
+  }
+
   createLink({
     shortName,
     storedFileId: fileId,
-    linkMaxDownloads: null,
-    linkExpiresAt: null,
-    downloadPasswordHash: null,
-    allowedEmails: '[]',
-    allowedDomains: '[]',
+    linkMaxDownloads: linkLimits.maxDownloads,
+    linkExpiresAt: linkLimits.expiresAt,
+    downloadPasswordHash: passwordParsed.hash,
+    allowedEmails: JSON.stringify(access.emails),
+    allowedDomains: JSON.stringify(access.domains),
     ownerUserId: null,
   });
 

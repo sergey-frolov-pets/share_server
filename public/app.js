@@ -92,6 +92,20 @@ const adminEditFileDeleteDaysInput = document.getElementById('admin-edit-file-de
 const adminEditFileDeleteAtInput = document.getElementById('admin-edit-file-delete-at');
 const adminEditFileSubmitBtn = document.getElementById('admin-edit-file-submit');
 const adminEditFileError = document.getElementById('admin-edit-file-error');
+const adminCreateLinkModal = document.getElementById('admin-create-link-modal');
+const adminCreateLinkForm = document.getElementById('admin-create-link-form');
+const adminCreateLinkFileLabel = document.getElementById('admin-create-link-file-label');
+const adminCreateLinkShortNameInput = document.getElementById('admin-create-link-short-name');
+const adminCreateLinkNamePreview = document.getElementById('admin-create-link-name-preview');
+const adminCreateLinkMaxDownloadsInput = document.getElementById('admin-create-link-max-downloads');
+const adminCreateLinkDaysInput = document.getElementById('admin-create-link-days');
+const adminCreateLinkPasswordInput = document.getElementById('admin-create-link-password');
+const adminCreateLinkEmailsInput = document.getElementById('admin-create-link-emails');
+const adminCreateLinkDomainsInput = document.getElementById('admin-create-link-domains');
+const adminCreateLinkEmailsHint = document.getElementById('admin-create-link-emails-hint');
+const adminCreateLinkDomainsHint = document.getElementById('admin-create-link-domains-hint');
+const adminCreateLinkSubmitBtn = document.getElementById('admin-create-link-submit');
+const adminCreateLinkError = document.getElementById('admin-create-link-error');
 const downloadQueueEl = document.getElementById('download-queue');
 const downloadQueueList = document.getElementById('download-queue-list');
 const downloadQueuePauseBtn = document.getElementById('download-queue-pause-btn');
@@ -110,6 +124,7 @@ let smtpConfigured = false;
 let adminAssetsCache = [];
 let adminEditFileId = null;
 let adminEditFileDeleteSyncBound = false;
+let adminCreateLinkFileId = null;
 
 const SMTP_ACCESS_UNAVAILABLE_HINT = 'Недоступно без настроенного SMTP на сервере';
 
@@ -119,8 +134,17 @@ function updateAccessRestrictionFields() {
   allowedDomainsInput.disabled = !enabled;
   updateAllowedEmailsInput.disabled = !enabled;
   updateAllowedDomainsInput.disabled = !enabled;
+  adminCreateLinkEmailsInput.disabled = !enabled;
+  adminCreateLinkDomainsInput.disabled = !enabled;
 
-  const hints = [accessEmailsHint, accessDomainsHint, updateAccessEmailsHint, updateAccessDomainsHint];
+  const hints = [
+    accessEmailsHint,
+    accessDomainsHint,
+    updateAccessEmailsHint,
+    updateAccessDomainsHint,
+    adminCreateLinkEmailsHint,
+    adminCreateLinkDomainsHint,
+  ];
   hints.forEach((el) => {
     if (!el) return;
     if (enabled) {
@@ -135,6 +159,8 @@ function updateAccessRestrictionFields() {
   if (!enabled) {
     allowedEmailsInput.value = '';
     allowedDomainsInput.value = '';
+    adminCreateLinkEmailsInput.value = '';
+    adminCreateLinkDomainsInput.value = '';
   }
 }
 
@@ -965,15 +991,78 @@ function editAdminFileRow(e) {
   openAdminEditFileModal(fileId);
 }
 
-async function addAdminFileLink(e) {
+function updateAdminCreateLinkNamePreview() {
+  const name = adminCreateLinkShortNameInput.value.trim();
+  const origin = window.location.origin;
+  adminCreateLinkNamePreview.textContent = name ? `${origin}/${name}` : `${origin}/...`;
+}
+
+function resetAdminCreateLinkForm() {
+  adminCreateLinkShortNameInput.value = '';
+  adminCreateLinkMaxDownloadsInput.value = '';
+  adminCreateLinkDaysInput.value = '';
+  adminCreateLinkPasswordInput.value = '';
+  adminCreateLinkEmailsInput.value = '';
+  adminCreateLinkDomainsInput.value = '';
+  updateAdminCreateLinkNamePreview();
+}
+
+function closeAdminCreateLinkModal() {
+  hide(adminCreateLinkModal);
+  adminCreateLinkFileId = null;
+  setMessage(adminCreateLinkError, null);
+}
+
+async function assignAdminCreateLinkShortName() {
+  try {
+    const data = await api('/api/random-name');
+    adminCreateLinkShortNameInput.value = data.shortName;
+    updateAdminCreateLinkNamePreview();
+    setMessage(adminCreateLinkError, null);
+  } catch (err) {
+    setMessage(adminCreateLinkError, err.message, 'error');
+  }
+}
+
+async function openAdminCreateLinkModal(e) {
   const row = e.target.closest('tr');
-  const fileId = row.dataset.fileId;
+  const fileId = parseInt(row.dataset.fileId, 10);
+  const file = adminAssetsCache.find((entry) => entry.id === fileId);
+  if (!file) return;
+
+  adminCreateLinkFileId = fileId;
+  const fileName = row.querySelector('.admin-file-name').value.trim() || file.originalName;
+  adminCreateLinkFileLabel.textContent = `Файл: ${fileName}`;
+  resetAdminCreateLinkForm();
+  setMessage(adminCreateLinkError, null);
+  show(adminCreateLinkModal);
+  await assignAdminCreateLinkShortName();
+}
+
+async function submitAdminCreateLinkForm(e) {
+  e.preventDefault();
+  if (!adminCreateLinkFileId) return;
+
+  setMessage(adminCreateLinkError, null);
+  adminCreateLinkSubmitBtn.disabled = true;
 
   try {
-    const data = await api(`/api/admin/files/${fileId}/links`, {
+    const data = await api(`/api/admin/files/${adminCreateLinkFileId}/links`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        shortName: adminCreateLinkShortNameInput.value.trim(),
+        downloadPassword: adminCreateLinkPasswordInput.value,
+        allowedEmails: adminCreateLinkEmailsInput.value,
+        allowedDomains: adminCreateLinkDomainsInput.value,
+        ...buildLimitPayload(
+          adminCreateLinkMaxDownloadsInput.value,
+          adminCreateLinkDaysInput.value,
+          '',
+          ''
+        ),
+      }),
     });
+    closeAdminCreateLinkModal();
     setMessage(adminFilesMessage, `Ссылка создана: ${data.shareUrl}`, 'success');
     if (data.file) {
       adminAssetsCache = adminAssetsCache.map((entry) => (
@@ -986,8 +1075,14 @@ async function addAdminFileLink(e) {
       await loadAdminFiles();
     }
   } catch (err) {
-    setMessage(adminError, err.message, 'error');
+    setMessage(adminCreateLinkError, err.message, 'error');
+  } finally {
+    adminCreateLinkSubmitBtn.disabled = false;
   }
+}
+
+async function addAdminFileLink(e) {
+  await openAdminCreateLinkModal(e);
 }
 
 async function saveAdminLinkRow(e) {
@@ -1128,9 +1223,17 @@ adminEditFileForm.addEventListener('submit', submitAdminEditFileForm);
 adminEditFileModal.querySelectorAll('[data-admin-edit-file-close]').forEach((btn) => {
   btn.addEventListener('click', closeAdminEditFileModal);
 });
+adminCreateLinkForm.addEventListener('submit', submitAdminCreateLinkForm);
+adminCreateLinkShortNameInput.addEventListener('input', updateAdminCreateLinkNamePreview);
+adminCreateLinkModal.querySelectorAll('[data-admin-create-link-close]').forEach((btn) => {
+  btn.addEventListener('click', closeAdminCreateLinkModal);
+});
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !adminEditFileModal.classList.contains('hidden')) {
     closeAdminEditFileModal();
+  }
+  if (e.key === 'Escape' && !adminCreateLinkModal.classList.contains('hidden')) {
+    closeAdminCreateLinkModal();
   }
 });
 
